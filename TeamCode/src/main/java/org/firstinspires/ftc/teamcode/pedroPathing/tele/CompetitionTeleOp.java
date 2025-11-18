@@ -1,66 +1,142 @@
 package org.firstinspires.ftc.teamcode.pedroPathing.tele;
 
-import com.bylazar.configurables.annotations.Configurable;
+
 import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
+
 import com.qualcomm.hardware.bosch.BNO055IMU;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.LLResultTypes.FiducialResult;
-import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
+import com.qualcomm.hardware.rev.RevColorSensorV3;
+
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+
 import com.qualcomm.robotcore.hardware.CRServo;
-import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
+import com.qualcomm.robotcore.hardware.Servo;
+
+import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 import java.util.List;
 
-@Configurable
-@TeleOp(name = "Competition TeleOp", group = "TeleOp")
+
+@TeleOp(name = "Limelight Triple Shooter (PIDF) - Panels Tunable (Final)", group = "TeleOp")
 public class CompetitionTeleOp extends LinearOpMode {
 
+    // -----------------------------------------------------------------------
+    // Exposed (public static) shooter PIDF + target RPM values for tuning in Panels
+    // -----------------------------------------------------------------------
+    // Right shooter (default values)
+    public static double right_kP = 0.0002;
+    public static double right_kI = 0.0;
+    public static double right_kD = 0.0001;
+    public static double right_kF = 0.0004;
+    public static double right_targetRPM = 3000.0;
+
+    // Middle shooter
+    public static double middle_kP = 0.0002;
+    public static double middle_kI = 0.0;
+    public static double middle_kD = 0.0001;
+    public static double middle_kF = 0.00035;
+    public static double middle_targetRPM = 3000.0;
+
+    // Left shooter
+    public static double left_kP = 0.0002;
+    public static double left_kI = 0.0;
+    public static double left_kD = 0.0001;
+    public static double left_kF = 0.00035;
+    public static double left_targetRPM = 3000.0;
+
+    // -----------------------------------------------------------------------
+    // Exposed Limelight PID values for tuning in Panels
+    // -----------------------------------------------------------------------
+    public static double limelight_kP = 0.012;
+    public static double limelight_kD = 0.002;
+    public static double limelight_minCmd = 0.06;
+    public static double limelight_deadband = 1.8;
+    public static double limelight_maxSpeed = 0.3;
+
+    // -----------------------------------------------------------------------
+    // Other TeleOp / limelight constants
+    // -----------------------------------------------------------------------
+    private static final double TRIGGER_THRESHOLD = 0.3;
+
+    // -----------------------------------------------------------------------
+    // Hardware & helpers
+    // -----------------------------------------------------------------------
     private Follower follower;
     private TelemetryManager telemetryM;
+
     private BNO055IMU imu;
     private double imuOffset = 0;
+
     private Limelight3A limelight;
 
-    // === HARDWARE ===
-    private DcMotor intakeMotor;
-    private CRServo intakeServo;
-    private ColorSensor leftSensor;
-    private ColorSensor rightSensor;
-    private ColorSensor middleSensor;
-    private DcMotorEx leftShooter;
+    // servos (triple shooter)
+    private Servo leftServo;
+    private Servo middleServo;
+    private Servo rightServo;
+    private static final double SERVO_MAX = 1.0; // startup / up
+    private static final double SERVO_MIN = 0.0; // down during centering
+
+    // intake
+    private DcMotor intake;
+
+    // sorter (continuous rotation) and color sensors (left/right)
+    private CRServo sorterServo;
+    private CRServo sorterServo2;
+    private RevColorSensorV3 leftColor;
+    private RevColorSensorV3 rightColor;
+
+    // thresholds (changed to 100)
+    private static final int SIDE_DETECT_THRESHOLD = 100;   // left/right sensors
+
+    // shooter motors (use DcMotorEx for getVelocity())
     private DcMotorEx rightShooter;
     private DcMotorEx middleShooter;
+    private DcMotorEx leftShooter;
 
-    // === CONSTANTS ===
-    private static final double ROTATE_KP = 0.025; // Tuned lower to reduce oscillation/overshoot
-    private static final double TX_DEADBAND = 2.0; // Increased deadband for stability
-    private static final double MAX_ROTATE_SPEED = 0.6;
-    private static final double TRIGGER_THRESHOLD = 0.3;
-    private static final double TICKS_PER_REV = 28.0; // Assuming standard encoder ticks per revolution
-    private static final double TARGET_RPM = 3000.0;
+    // PID integrators / state for each shooter
+    private double right_integral = 0.0;
+    private double right_lastError = 0.0;
 
-    private boolean slowMode = false;
-    private boolean slowToggleAllowed = true;
-    private double slowModeMultiplier = 0.25; // Quarter speed, Logan like half speed
+    private double middle_integral = 0.0;
+    private double middle_lastError = 0.0;
 
-    private boolean shootersRunning = false;
-    private boolean leftOn = false;
-    private boolean rightOn = false;
-    private boolean middleOn = false;
-    private double prevTrigger = 0;
+    private double left_integral = 0.0;
+    private double left_lastError = 0.0;
+
+    // ---- shooter ENABLE flags (D-pad toggles) ----
+    private boolean rightShooterEnabled  = false;
+    private boolean middleShooterEnabled = false;
+    private boolean leftShooterEnabled   = false;
+
+    private boolean dpadLeftReady  = true;
+    private boolean dpadRightReady = true;
+    private boolean dpadUpReady    = true;
+
+    // ---- slow mode toggle ----
+    private boolean slowModeEnabled = false;
+    private boolean rightBumperReady = true;
+
+    // encoder ticks per motor revolution for REV (change if using gearbox encoder)
+    private static final double TICKS_PER_REV = 28.0;
+
+    // rotation PID memory
+    private double lastTxError = 0.0;
+    private double lastLoopTime = 0.0;
 
     @Override
     public void runOpMode() throws InterruptedException {
+
         // ---------- FOLLOWER ----------
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(new Pose());
@@ -69,21 +145,20 @@ public class CompetitionTeleOp extends LinearOpMode {
         telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
 
         // ---------- IMU ----------
-        BNO055IMU.Parameters params = new BNO055IMU.Parameters();
-        params.mode = BNO055IMU.SensorMode.IMU;
-        params.angleUnit = BNO055IMU.AngleUnit.RADIANS;
-        params.accelUnit = BNO055IMU.AccelUnit.METERS_PERSEC_PERSEC;
-        params.loggingEnabled = false;
+        BNO055IMU.Parameters imuParams = new BNO055IMU.Parameters();
+        imuParams.mode = BNO055IMU.SensorMode.IMU;
+        imuParams.angleUnit = BNO055IMU.AngleUnit.RADIANS;
+        imuParams.accelUnit = BNO055IMU.AccelUnit.METERS_PERSEC_PERSEC;
+        imuParams.loggingEnabled = false;
 
         imu = hardwareMap.get(BNO055IMU.class, "imu");
-        imu.initialize(params);
+        imu.initialize(imuParams);
 
         while (!imu.isGyroCalibrated() && !isStopRequested()) {
             telemetry.addLine("Calibrating IMU...");
             telemetry.update();
             sleep(10);
         }
-
         telemetry.addLine(imu.isGyroCalibrated() ? "IMU Ready" : "IMU Calibration Failed");
 
         // ---------- LIMELIGHT ----------
@@ -93,57 +168,290 @@ public class CompetitionTeleOp extends LinearOpMode {
         limelight.start();
 
         // ---------- INTAKE ----------
-        intakeMotor = hardwareMap.get(DcMotor.class, "intake");
-        intakeMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        intake = hardwareMap.get(DcMotor.class, "intake");
+        intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        // ---------- SERVO ----------
-        intakeServo = hardwareMap.get(CRServo.class, "motor67");
+        // ---------- SORTER + COLOR SENSORS ----------
+        sorterServo = hardwareMap.get(CRServo.class, "sorterServo");
+        sorterServo2 = hardwareMap.get(CRServo.class, "sorterServo2");
+        leftColor   = hardwareMap.get(RevColorSensorV3.class, "leftColor");
+        rightColor  = hardwareMap.get(RevColorSensorV3.class, "rightColor");
 
-        // ---------- COLOR SENSORS ----------
-        leftSensor = hardwareMap.get(ColorSensor.class, "leftSensor");
-        rightSensor = hardwareMap.get(ColorSensor.class, "rightSensor");
-        middleSensor = hardwareMap.get(ColorSensor.class, "middleSensor");
+        // ---------- SERVOS ----------
+        leftServo   = hardwareMap.get(Servo.class, "leftServo");
+        middleServo = hardwareMap.get(Servo.class, "middleServo");
+        rightServo  = hardwareMap.get(Servo.class, "rightServo");
 
-        // ---------- SHOOTER MOTORS ----------
-        leftShooter = hardwareMap.get(DcMotorEx.class, "leftShooter");
-        rightShooter = hardwareMap.get(DcMotorEx.class, "rightShooter");
+        // startup positions
+        leftServo.setPosition(SERVO_MAX);
+        middleServo.setPosition(SERVO_MAX);
+        rightServo.setPosition(SERVO_MAX);
+
+        // ---------- SHOOTER MOTORS (DcMotorEx) ----------
+        rightShooter  = hardwareMap.get(DcMotorEx.class, "rightShooter");
         middleShooter = hardwareMap.get(DcMotorEx.class, "middleShooter");
+        leftShooter   = hardwareMap.get(DcMotorEx.class, "leftShooter");
 
-        leftShooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        rightShooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        middleShooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-
-        leftShooter.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        // Use encoder velocity reporting
         rightShooter.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         middleShooter.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        leftShooter.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
-        telemetry.addLine("All systems ready: Limelight + Intake + Servo + Color Sensors + Shooters");
+        // direction and zero behavior - adjust if necessary
+        rightShooter.setDirection(DcMotorSimple.Direction.REVERSE);
+        middleShooter.setDirection(DcMotorSimple.Direction.REVERSE);
+        leftShooter.setDirection(DcMotorSimple.Direction.REVERSE);
+
+        rightShooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        middleShooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        leftShooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+
+        // ---------- READY ----------
+        telemetry.addLine("TeleOp Triple Shooter Ready");
         telemetry.update();
 
         waitForStart();
         follower.startTeleopDrive(true);
 
-        double servoPower = 0.0;
+        lastLoopTime = getRuntime();
 
         while (opModeIsActive()) {
             follower.update();
             telemetryM.update();
 
-            // --- LIMELIGHT ---
+            // loop timing
+            double now = getRuntime();
+            double dt = now - lastLoopTime;
+            if (dt <= 0) dt = 1e-6;
+            lastLoopTime = now;
+
+            // ---------- LIMELIGHT READ ----------
             LLResult result = limelight.getLatestResult();
             boolean tagVisible = false;
             int tagId = -1;
             double tx = 0.0;
-
             if (result != null && result.isValid()) {
-                List<FiducialResult> fiducials = result.getFiducialResults();
-                if (!fiducials.isEmpty()) {
+                List<FiducialResult> fid = result.getFiducialResults();
+                if (!fid.isEmpty()) {
                     tagVisible = true;
-                    FiducialResult primary = fiducials.get(0);
+                    FiducialResult primary = fid.get(0);
                     tagId = primary.getFiducialId();
                     tx = primary.getTargetXDegrees();
                 }
             }
+
+            // ---------- SLOW MODE TOGGLE ----------
+            if (gamepad1.right_bumper && rightBumperReady) {
+                slowModeEnabled = !slowModeEnabled;
+                rightBumperReady = false;
+            }
+            if (!gamepad1.right_bumper) {
+                rightBumperReady = true;
+            }
+
+            // ---------- DRIVER INPUTS ----------
+            double y  = -gamepad1.left_stick_y;
+            double x  = -gamepad1.left_stick_x;
+            double rx = -gamepad1.right_stick_x;
+            double heading = getHeading();
+
+            // Apply cubic inputs
+            y = Math.pow(y, 3);
+            x = Math.pow(x, 3);
+            rx = Math.pow(rx, 3);
+
+            // Apply slow mode scaling (max power 0.25 when enabled, 1.0 when disabled)
+            double maxPower = slowModeEnabled ? 0.25 : 1.0;
+
+            double rotatedX = x * Math.cos(heading) - y * Math.sin(heading);
+            double rotatedY = x * Math.sin(heading) + y * Math.cos(heading);
+
+            boolean centering = gamepad1.right_trigger > TRIGGER_THRESHOLD;
+            boolean centeringGamepad2 = gamepad2.right_trigger > TRIGGER_THRESHOLD;
+
+            // ---------- SERVOS + INTAKE behavior linked to RIGHT TRIGGER ----------
+            // Only gamepad2 right trigger controls servos and intake
+            if (centeringGamepad2) {
+                // servos down
+                leftServo.setPosition(SERVO_MIN);
+                middleServo.setPosition(SERVO_MIN);
+                rightServo.setPosition(SERVO_MIN);
+
+                // intake forced forward while trigger pressed
+                intake.setPower(1.0);
+            } else {
+                // servos up
+                leftServo.setPosition(SERVO_MAX);
+                middleServo.setPosition(SERVO_MAX);
+                rightServo.setPosition(SERVO_MAX);
+
+                // manual intake control when trigger not pressed (from gamepad2)
+                if (gamepad2.a) intake.setPower(1.0);
+                else if (gamepad2.b) intake.setPower(-1.0);
+                else intake.setPower(0.0);
+            }
+
+            // ---------- D-PAD SHOOTER TOGGLES (gamepad2) ----------
+            // dpad left -> left shooter, dpad right -> right shooter, dpad up -> middle shooter
+            if (gamepad2.dpad_left && dpadLeftReady) {
+                leftShooterEnabled = !leftShooterEnabled;
+                dpadLeftReady = false;
+            }
+            if (!gamepad2.dpad_left) dpadLeftReady = true;
+
+            if (gamepad2.dpad_right && dpadRightReady) {
+                rightShooterEnabled = !rightShooterEnabled;
+                dpadRightReady = false;
+            }
+            if (!gamepad2.dpad_right) dpadRightReady = true;
+
+            if (gamepad2.dpad_up && dpadUpReady) {
+                middleShooterEnabled = !middleShooterEnabled;
+                dpadUpReady = false;
+            }
+            if (!gamepad2.dpad_up) dpadUpReady = true;
+
+            // ---------- Shooter PIDF loops (independent) ----------
+            double rightPower = 0.0, middlePower = 0.0, leftPower = 0.0;
+            double rightRPM = 0.0, middleRPM = 0.0, leftRPM = 0.0;
+
+            // get velocities (ticks/sec)
+            double rightTicksPerSec  = rightShooter.getVelocity();
+            double middleTicksPerSec = middleShooter.getVelocity();
+            double leftTicksPerSec   = leftShooter.getVelocity();
+
+            rightRPM  = rightTicksPerSec  * 60.0 / TICKS_PER_REV;
+            middleRPM = middleTicksPerSec * 60.0 / TICKS_PER_REV;
+            leftRPM   = leftTicksPerSec   * 60.0 / TICKS_PER_REV;
+
+            // RIGHT shooter PIDF
+            if (rightShooterEnabled) {
+                double error = right_targetRPM - rightRPM;
+                right_integral += error * dt;
+                double derivative = (error - right_lastError) / dt;
+                right_lastError = error;
+
+                double p = right_kP * error;
+                double i = right_kI * right_integral;
+                double d = right_kD * derivative;
+                double f = right_kF * right_targetRPM;
+                rightPower = p + i + d + f;
+                rightPower = Range.clip(rightPower, 0.0, 1.0);
+            } else {
+                rightPower = 0.0;
+            }
+
+            // MIDDLE shooter PIDF
+            if (middleShooterEnabled) {
+                double error = middle_targetRPM - middleRPM;
+                middle_integral += error * dt;
+                double derivative = (error - middle_lastError) / dt;
+                middle_lastError = error;
+
+                double p = middle_kP * error;
+                double i = middle_kI * middle_integral;
+                double d = middle_kD * derivative;
+                double f = middle_kF * middle_targetRPM;
+                middlePower = p + i + d + f;
+                middlePower = Range.clip(middlePower, 0.0, 1.0);
+            } else {
+                middlePower = 0.0;
+            }
+
+            // LEFT shooter PIDF
+            if (leftShooterEnabled) {
+                double error = left_targetRPM - leftRPM;
+                left_integral += error * dt;
+                double derivative = (error - left_lastError) / dt;
+                left_lastError = error;
+
+                double p = left_kP * error;
+                double i = left_kI * left_integral;
+                double d = left_kD * derivative;
+                double f = left_kF * left_targetRPM;
+                leftPower = p + i + d + f;
+                leftPower = Range.clip(leftPower, 0.0, 1.0);
+            } else {
+                leftPower = 0.0;
+            }
+
+            // apply shooter powers
+            rightShooter.setPower(rightPower);
+            middleShooter.setPower(middlePower);
+            leftShooter.setPower(leftPower);
+
+            // ---------- COLOR SENSORS: read values & occupancy ----------
+            int lR = leftColor.red();
+            int lG = leftColor.green();
+            int lB = leftColor.blue();
+
+            int rR = rightColor.red();
+            int rG = rightColor.green();
+            int rB = rightColor.blue();
+
+            boolean leftOccupied  = (lR > SIDE_DETECT_THRESHOLD) || (lG > SIDE_DETECT_THRESHOLD) || (lB > SIDE_DETECT_THRESHOLD);
+            boolean rightOccupied = (rR > SIDE_DETECT_THRESHOLD) || (rG > SIDE_DETECT_THRESHOLD) || (rB > SIDE_DETECT_THRESHOLD);
+
+            // ---------- MANUAL SORTER CONTROL (gamepad2 left stick X-axis) ----------
+            // Left stick left = counter-clockwise (negative), right = clockwise (positive)
+            double sorterInput = gamepad2.left_stick_x;
+
+            if (Math.abs(sorterInput) > 0.1) { // Small deadband
+                // Apply full power in the direction of the joystick
+                double sorterPower = (sorterInput > 0) ? 1.0 : -1.0;
+                sorterServo.setPower(sorterPower);
+                sorterServo2.setPower(sorterPower);
+            } else {
+                // No joystick input, stop sorters
+                sorterServo.setPower(0.0);
+                sorterServo2.setPower(0.0);
+            }
+
+            // ---------- Driving / auto-rotation (centering) ----------
+            // Only gamepad1 trigger can activate auto-centering
+            if (centering && tagVisible) {
+                double rotate = 0.0;
+                double error = tx;
+                if (Math.abs(error) > limelight_deadband) {
+                    double derivative = (error - lastTxError) / dt;
+                    rotate = -(limelight_kP * error + limelight_kD * derivative);
+
+                    if (Math.abs(rotate) < limelight_minCmd) {
+                        rotate = limelight_minCmd * Math.signum(rotate);
+                    }
+                    rotate = Range.clip(rotate, -limelight_maxSpeed, limelight_maxSpeed);
+                } else {
+                    rotate = 0.0;
+                }
+                lastTxError = error;
+                follower.setTeleOpDrive(0.0, 0.0, rotate, false);
+            } else {
+                follower.setTeleOpDrive(rotatedY * maxPower, rotatedX * maxPower, rx * maxPower, true);
+            }
+
+            // ---------- Reset heading (X) ----------
+            if (gamepad1.x) imuOffset = imu.getAngularOrientation().firstAngle;
+
+            // ---------- Telemetry ----------
+            telemetry.addData("LeftColor R/G/B", "%d / %d / %d", lR, lG, lB);
+            telemetry.addData("RightColor R/G/B", "%d / %d / %d", rR, rG, rB);
+
+            telemetry.addData("LeftOccupied", leftOccupied);
+            telemetry.addData("RightOccupied", rightOccupied);
+
+            telemetry.addLine();
+            telemetry.addData("Slow Mode", slowModeEnabled ? "ENABLED" : "DISABLED");
+            telemetry.addData("Max Power", maxPower);
+
+            telemetry.addLine();
+            telemetry.addData("Shooter Enabled (L/M/R)", "%b / %b / %b", leftShooterEnabled, middleShooterEnabled, rightShooterEnabled);
+            telemetry.addData("Shooter RPMs (L/M/R)", "%.0f / %.0f / %.0f", leftRPM, middleRPM, rightRPM);
+            telemetry.addData("Shooter Pwr  (L/M/R)", "%.3f / %.3f / %.3f", leftPower, middlePower, rightPower);
+
+            telemetry.addLine();
+            telemetry.addData("Sort Power", sorterServo.getPower());
+            telemetry.addData("Sort2 Power", sorterServo2.getPower());
+            telemetry.addData("Intake Power", intake.getPower());
 
             if (tagVisible) {
                 telemetry.addData("Tag ID", tagId);
@@ -152,152 +460,11 @@ public class CompetitionTeleOp extends LinearOpMode {
                 telemetry.addLine("No AprilTag");
             }
 
-            // --- DRIVE INPUTS ---
-            double y = -gamepad1.left_stick_y;
-            double x = -gamepad1.left_stick_x;
-            double rx = -gamepad1.right_stick_x;
-
-            double heading = getHeading();
-            double scale = slowMode ? slowModeMultiplier : 1.0;
-
-            double rotatedX = x * Math.cos(heading) - y * Math.sin(heading);
-            double rotatedY = x * Math.sin(heading) + y * Math.cos(heading);
-
-            double currentTrigger = gamepad1.right_trigger;
-            boolean centering = currentTrigger > TRIGGER_THRESHOLD;
-
-            if (centering && tagVisible) {
-                double rotate = 0.0;
-                if (Math.abs(tx) > TX_DEADBAND) {
-                    rotate = -tx * ROTATE_KP;
-                    rotate = com.qualcomm.robotcore.util.Range.clip(rotate, -MAX_ROTATE_SPEED, MAX_ROTATE_SPEED);
-                }
-                follower.setTeleOpDrive(0, 0, rotate, false);
-            } else {
-                follower.setTeleOpDrive(rotatedY * scale, rotatedX * scale, rx * scale, true);
-            }
-
-            // --- SHOOTER CONTROL ---
-            if (prevTrigger <= TRIGGER_THRESHOLD && currentTrigger > TRIGGER_THRESHOLD) {
-                if (shootersRunning) {
-                    // Stop shooters
-                    leftShooter.setVelocity(0);
-                    middleShooter.setVelocity(0);
-                    rightShooter.setVelocity(0);
-                    shootersRunning = false;
-                } else {
-                    // Start shooters based on current sensor readings
-                    leftOn = isBallDetected(leftSensor);
-                    middleOn = isBallDetected(middleSensor);
-                    rightOn = isBallDetected(rightSensor);
-                    if (leftOn || middleOn || rightOn) {
-                        shootersRunning = true;
-                    }
-                }
-            }
-
-            // Maintain shooter velocities if running
-            double targetVelocity = (TARGET_RPM / 60.0) * TICKS_PER_REV;
-            if (shootersRunning) {
-                leftShooter.setVelocity(leftOn ? targetVelocity : 0);
-                middleShooter.setVelocity(middleOn ? targetVelocity : 0);
-                rightShooter.setVelocity(rightOn ? targetVelocity : 0);
-            } else {
-                leftShooter.setVelocity(0);
-                middleShooter.setVelocity(0);
-                rightShooter.setVelocity(0);
-            }
-            prevTrigger = currentTrigger;
-
-            // --- INTAKE CONTROL ---
-            if (gamepad1.a) {
-                intakeMotor.setPower(1.0);
-            } else if (gamepad1.b) {
-                intakeMotor.setPower(-1.0);
-            } else {
-                intakeMotor.setPower(0.0);
-            }
-
-            // --- SERVO CONTROL ---
-            servoPower = 0.0;
-            if (gamepad1.a) {
-                // Auto sorting logic during intake
-                if (!isBallDetected(leftSensor)) {
-                    servoPower = 1.0; // Clockwise (to the right, pushes to left)
-                } else if (!isBallDetected(rightSensor)) {
-                    servoPower = -1.0; // Counter-clockwise (to the left, pushes to right)
-                } else {
-                    servoPower = 0.0; // Stop to allow middle
-                }
-            } else {
-                // Manual control with D-pad
-                if (gamepad1.dpad_up) {
-                    servoPower = 1.0;
-                } else if (gamepad1.dpad_down) {
-                    servoPower = -1.0;
-                } else if (gamepad1.dpad_right) {
-                    servoPower = 0.0;
-                }
-            }
-            intakeServo.setPower(servoPower);
-
-            // --- COLOR SENSOR DETECTION ---
-            telemetry.addData("Left Ball", getBallColor(leftSensor));
-            telemetry.addData("Middle Ball", getBallColor(middleSensor));
-            telemetry.addData("Right Ball", getBallColor(rightSensor));
-
-            // --- MISC CONTROLS ---
-            if (gamepad1.x) {
-                imuOffset = imu.getAngularOrientation().firstAngle;
-            }
-
-            if (gamepad1.right_bumper && slowToggleAllowed) {
-                slowMode = !slowMode;
-                slowToggleAllowed = false;
-            }
-            if (!gamepad1.right_bumper) {
-                slowToggleAllowed = true;
-            }
-
-            telemetry.addData("Heading", "%.3f", heading);
-            telemetry.addData("Slow Mode", slowMode);
-            telemetry.addData("Centering", centering && tagVisible);
-            telemetry.addData("Intake Power", intakeMotor.getPower());
-            telemetry.addData("Servo Power", servoPower);
-            telemetry.addData("Shooters Running", shootersRunning);
             telemetry.update();
-        }
-    }
+        } // end opModeIsActive
+    } // end runOpMode
 
     private double getHeading() {
         return imu.getAngularOrientation().firstAngle - imuOffset;
-    }
-
-    private boolean isBallDetected(ColorSensor sensor) {
-        return isGreen(sensor) || isPurple(sensor);
-    }
-
-    private String getBallColor(ColorSensor sensor) {
-        if (isGreen(sensor)) {
-            return "GREEN";
-        } else if (isPurple(sensor)) {
-            return "PURPLE";
-        }
-        return "NONE";
-    }
-
-    private boolean isGreen(ColorSensor sensor) {
-        int red = sensor.red();
-        int green = sensor.green();
-        int blue = sensor.blue();
-        return (green > red * 1.3 && green > blue * 1.3 && green > 80);
-    }
-
-    private boolean isPurple(ColorSensor sensor) {
-        int red = sensor.red();
-        int green = sensor.green();
-        int blue = sensor.blue();
-        // Tuned for darker purple: lower red/blue thresholds, adjusted ratios
-        return (red > 40 && blue > 40 && green < red * 0.7 && green < blue * 0.7);
     }
 }
