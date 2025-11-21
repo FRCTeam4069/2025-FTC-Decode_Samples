@@ -15,7 +15,7 @@ public class Constants {
     public static FollowerConstants followerConstants = new FollowerConstants()
             .forwardZeroPowerAcceleration(-58)
             .lateralZeroPowerAcceleration(-58.78)
-            .mass(11.4); //9.1 kg is like 20 pounds
+            .mass(13.6); //13.6 kg is like 30 pounds
 
     public static ThreeWheelIMUConstants localizerConstants = new ThreeWheelIMUConstants()
             .forwardTicksToInches(.001989436789)

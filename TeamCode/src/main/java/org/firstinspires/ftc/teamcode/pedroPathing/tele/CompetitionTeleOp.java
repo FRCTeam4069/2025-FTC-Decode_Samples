@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode.pedroPathing.tele;
 
 
+import com.bylazar.configurables.annotations.Configurable;
 import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
@@ -28,7 +29,8 @@ import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import java.util.List;
 
 
-@TeleOp(name = "Limelight Triple Shooter (PIDF) - Panels Tunable (Final)", group = "TeleOp")
+@Configurable
+@TeleOp(name = "Sudbury Competition TeleOp", group = "TeleOp")
 public class CompetitionTeleOp extends LinearOpMode {
 
     // -----------------------------------------------------------------------
@@ -38,22 +40,22 @@ public class CompetitionTeleOp extends LinearOpMode {
     public static double right_kP = 0.0002;
     public static double right_kI = 0.0;
     public static double right_kD = 0.0001;
-    public static double right_kF = 0.0004;
-    public static double right_targetRPM = 3000.0;
+    public static double right_kF = 0.00025;
+    public static double right_targetRPM = 4000.0;
 
     // Middle shooter
-    public static double middle_kP = 0.0002;
+    public static double middle_kP = 0.00015;
     public static double middle_kI = 0.0;
     public static double middle_kD = 0.0001;
-    public static double middle_kF = 0.00035;
-    public static double middle_targetRPM = 3000.0;
+    public static double middle_kF = 0.0002;
+    public static double middle_targetRPM = 4000.0;
 
     // Left shooter
-    public static double left_kP = 0.0002;
+    public static double left_kP = 0.00015;
     public static double left_kI = 0.0;
     public static double left_kD = 0.0001;
-    public static double left_kF = 0.00035;
-    public static double left_targetRPM = 3000.0;
+    public static double left_kF = 0.0002;
+    public static double left_targetRPM = 4000.0;
 
     // -----------------------------------------------------------------------
     // Exposed Limelight PID values for tuning in Panels
@@ -225,6 +227,10 @@ public class CompetitionTeleOp extends LinearOpMode {
             if (dt <= 0) dt = 1e-6;
             lastLoopTime = now;
 
+            // ---------- SORTER SERVOS: Always spinning ----------
+            sorterServo.setPower(1.0);   // forward at max power
+            sorterServo2.setPower(-1.0); // reverse at max power
+
             // ---------- LIMELIGHT READ ----------
             LLResult result = limelight.getLatestResult();
             boolean tagVisible = false;
@@ -391,21 +397,6 @@ public class CompetitionTeleOp extends LinearOpMode {
 
             boolean leftOccupied  = (lR > SIDE_DETECT_THRESHOLD) || (lG > SIDE_DETECT_THRESHOLD) || (lB > SIDE_DETECT_THRESHOLD);
             boolean rightOccupied = (rR > SIDE_DETECT_THRESHOLD) || (rG > SIDE_DETECT_THRESHOLD) || (rB > SIDE_DETECT_THRESHOLD);
-
-            // ---------- MANUAL SORTER CONTROL (gamepad2 left stick X-axis) ----------
-            // Left stick left = counter-clockwise (negative), right = clockwise (positive)
-            double sorterInput = gamepad2.left_stick_x;
-
-            if (Math.abs(sorterInput) > 0.1) { // Small deadband
-                // Apply full power in the direction of the joystick
-                double sorterPower = (sorterInput > 0) ? 1.0 : -1.0;
-                sorterServo.setPower(sorterPower);
-                sorterServo2.setPower(sorterPower);
-            } else {
-                // No joystick input, stop sorters
-                sorterServo.setPower(0.0);
-                sorterServo2.setPower(0.0);
-            }
 
             // ---------- Driving / auto-rotation (centering) ----------
             // Only gamepad1 trigger can activate auto-centering
