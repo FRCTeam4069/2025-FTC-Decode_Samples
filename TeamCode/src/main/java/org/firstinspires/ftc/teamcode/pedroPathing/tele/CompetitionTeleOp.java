@@ -129,6 +129,10 @@ public class CompetitionTeleOp extends LinearOpMode {
     private boolean slowModeEnabled = false;
     private boolean rightBumperReady = true;
 
+    // ---- sorter servo toggle and state ----
+    private boolean sorterEnabled = true;
+    private boolean rightStickReady = true;
+
     // encoder ticks per motor revolution for REV (change if using gearbox encoder)
     private static final double TICKS_PER_REV = 28.0;
 
@@ -227,9 +231,37 @@ public class CompetitionTeleOp extends LinearOpMode {
             if (dt <= 0) dt = 1e-6;
             lastLoopTime = now;
 
-            // ---------- SORTER SERVOS: Always spinning ----------
-            sorterServo.setPower(1.0);   // forward at max power
-            sorterServo2.setPower(-1.0); // reverse at max power
+            // ---------- SORTER SERVOS: Default spinning with manual override ----------
+            // Right stick click toggles sorter on/off
+            if (gamepad2.right_stick_button && rightStickReady) {
+                sorterEnabled = !sorterEnabled;
+                rightStickReady = false;
+            }
+            if (!gamepad2.right_stick_button) {
+                rightStickReady = true;
+            }
+
+            // Determine sorter power based on state and manual override
+            double sorterPower1 = 0.0;
+            double sorterPower2 = 0.0;
+
+            if (sorterEnabled) {
+                // Check for manual override with left stick
+                double leftStickX = gamepad2.left_stick_x;
+                if (Math.abs(leftStickX) > 0.1) { // deadband
+                    // Manual override: left = counter-clockwise, right = clockwise
+                    sorterPower1 = -leftStickX;
+                    sorterPower2 = leftStickX;
+                } else {
+                    // Default: both spinning in opposite directions
+                    sorterPower1 = 1.0;
+                    sorterPower2 = -1.0;
+                }
+            }
+            // If sorterEnabled is false, both powers stay at 0.0
+
+            sorterServo.setPower(sorterPower1);
+            sorterServo2.setPower(sorterPower2);
 
             // ---------- LIMELIGHT READ ----------
             LLResult result = limelight.getLatestResult();
@@ -298,6 +330,13 @@ public class CompetitionTeleOp extends LinearOpMode {
             }
 
             // ---------- D-PAD SHOOTER TOGGLES (gamepad2) ----------
+            // Left trigger on gamepad2 turns off all shooters immediately
+            if (gamepad2.left_trigger > TRIGGER_THRESHOLD) {
+                leftShooterEnabled = false;
+                middleShooterEnabled = false;
+                rightShooterEnabled = false;
+            }
+
             // dpad left -> left shooter, dpad right -> right shooter, dpad up -> middle shooter
             if (gamepad2.dpad_left && dpadLeftReady) {
                 leftShooterEnabled = !leftShooterEnabled;
@@ -440,6 +479,7 @@ public class CompetitionTeleOp extends LinearOpMode {
             telemetry.addData("Shooter Pwr  (L/M/R)", "%.3f / %.3f / %.3f", leftPower, middlePower, rightPower);
 
             telemetry.addLine();
+            telemetry.addData("Sort Enabled", sorterEnabled);
             telemetry.addData("Sort Power", sorterServo.getPower());
             telemetry.addData("Sort2 Power", sorterServo2.getPower());
             telemetry.addData("Intake Power", intake.getPower());
