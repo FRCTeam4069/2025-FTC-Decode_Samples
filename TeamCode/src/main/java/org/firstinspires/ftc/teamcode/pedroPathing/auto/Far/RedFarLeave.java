@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode.pedroPathing.auto;
+package org.firstinspires.ftc.teamcode.pedroPathing.auto.Far;
 
 import com.bylazar.configurables.annotations.Configurable;
 import com.bylazar.telemetry.PanelsTelemetry;
@@ -26,7 +26,7 @@ public class RedFarLeave extends OpMode {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
 
         follower = Constants.createFollower(hardwareMap);
-        follower.setStartingPose(new Pose(72, 8, Math.toRadians(90))); // Your starting pose
+        follower.setStartingPose(new Pose(87, 8, Math.toRadians(90))); // Your starting pose
 
         paths = new Paths(follower);
 

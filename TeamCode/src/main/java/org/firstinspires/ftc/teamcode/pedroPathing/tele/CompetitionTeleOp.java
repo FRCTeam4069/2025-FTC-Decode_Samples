@@ -30,7 +30,7 @@ import java.util.List;
 
 
 @Configurable
-@TeleOp(name = "Sudbury Competition TeleOp", group = "TeleOp")
+@TeleOp(name = "Bolton Competition TeleOp", group = "TeleOp")
 public class CompetitionTeleOp extends LinearOpMode {
 
     // -----------------------------------------------------------------------
@@ -41,21 +41,21 @@ public class CompetitionTeleOp extends LinearOpMode {
     public static double right_kI = 0.0;
     public static double right_kD = 0.0001;
     public static double right_kF = 0.00025;
-    public static double right_targetRPM = 4000.0;
+    public static double right_targetRPM = 3500.0;
 
     // Middle shooter
     public static double middle_kP = 0.00015;
     public static double middle_kI = 0.0;
     public static double middle_kD = 0.0001;
     public static double middle_kF = 0.0002;
-    public static double middle_targetRPM = 4000.0;
+    public static double middle_targetRPM = 3500.0;
 
     // Left shooter
     public static double left_kP = 0.00015;
     public static double left_kI = 0.0;
     public static double left_kD = 0.0001;
     public static double left_kF = 0.0002;
-    public static double left_targetRPM = 4000.0;
+    public static double left_targetRPM = 3500.0;
 
     // -----------------------------------------------------------------------
     // Exposed Limelight PID values for tuning in Panels
@@ -67,7 +67,14 @@ public class CompetitionTeleOp extends LinearOpMode {
     public static double limelight_maxSpeed = 0.3;
 
     // -----------------------------------------------------------------------
+    // Shooter RPM tolerance and vibration settings
+    // -----------------------------------------------------------------------
+    public static double rpm_tolerance = 100.0; // RPM within tolerance to trigger vibration
+    public static int vibration_duration_ms = 200; // Duration of vibration in milliseconds
+
+    // -----------------------------------------------------------------------
     // Other TeleOp / limelight constants
+
     // -----------------------------------------------------------------------
     private static final double TRIGGER_THRESHOLD = 0.3;
 
@@ -86,6 +93,8 @@ public class CompetitionTeleOp extends LinearOpMode {
     private Servo leftServo;
     private Servo middleServo;
     private Servo rightServo;
+    private Servo leftPushServo;
+    private Servo rightPushServo;
     private static final double SERVO_MAX = 1.0; // startup / up
     private static final double SERVO_MIN = 0.0; // down during centering
 
@@ -132,6 +141,14 @@ public class CompetitionTeleOp extends LinearOpMode {
     // ---- sorter servo toggle and state ----
     private boolean sorterEnabled = true;
     private boolean rightStickReady = true;
+
+    // ---- push servo delay tracking ----
+    private boolean triggerWasPressed = false;
+    private double triggerPressTime = 0.0;
+    private static final double PUSH_SERVO_DELAY = 0.25; // half second delay
+
+    // ---- vibration state tracking ----
+    private boolean wasAtTargetRPM = false;
 
     // encoder ticks per motor revolution for REV (change if using gearbox encoder)
     private static final double TICKS_PER_REV = 28.0;
@@ -187,11 +204,19 @@ public class CompetitionTeleOp extends LinearOpMode {
         leftServo   = hardwareMap.get(Servo.class, "leftServo");
         middleServo = hardwareMap.get(Servo.class, "middleServo");
         rightServo  = hardwareMap.get(Servo.class, "rightServo");
+        leftPushServo = hardwareMap.get(Servo.class, "leftPushServo");
+        rightPushServo  = hardwareMap.get(Servo.class, "rightPushServo");
+
+        // Reverse the rightPushServo direction
+        rightPushServo.setDirection(Servo.Direction.REVERSE);
 
         // startup positions
         leftServo.setPosition(SERVO_MAX);
         middleServo.setPosition(SERVO_MAX);
         rightServo.setPosition(SERVO_MAX);
+        leftPushServo.setPosition(SERVO_MAX);
+        rightPushServo.setPosition(SERVO_MAX);  // Now uses same value as others due to direction reverse
+
 
         // ---------- SHOOTER MOTORS (DcMotorEx) ----------
         rightShooter  = hardwareMap.get(DcMotorEx.class, "rightShooter");
@@ -250,7 +275,7 @@ public class CompetitionTeleOp extends LinearOpMode {
                 double leftStickX = gamepad2.left_stick_x;
                 if (Math.abs(leftStickX) > 0.1) { // deadband
                     // Manual override: left = counter-clockwise, right = clockwise
-                    sorterPower1 = -leftStickX;
+                    sorterPower1 = leftStickX;   //Was originally -leftStickX
                     sorterPower2 = leftStickX;
                 } else {
                     // Default: both spinning in opposite directions
@@ -310,18 +335,42 @@ public class CompetitionTeleOp extends LinearOpMode {
             // ---------- SERVOS + INTAKE behavior linked to RIGHT TRIGGER ----------
             // Only gamepad2 right trigger controls servos and intake
             if (centeringGamepad2) {
-                // servos down
+                // Track when trigger is first pressed
+                if (!triggerWasPressed) {
+                    triggerPressTime = now;
+                    triggerWasPressed = true;
+                }
+
+                // Calculate time since trigger was pressed
+                double timeSinceTriggerPress = now - triggerPressTime;
+
+                // Blocker servos go down immediately
                 leftServo.setPosition(SERVO_MIN);
                 middleServo.setPosition(SERVO_MIN);
                 rightServo.setPosition(SERVO_MIN);
 
+                // Push servos go down after delay
+                if (timeSinceTriggerPress >= PUSH_SERVO_DELAY) {
+                    leftPushServo.setPosition(SERVO_MIN);
+                    rightPushServo.setPosition(SERVO_MIN);
+                } else {
+                    // Keep push servos up during delay
+                    leftPushServo.setPosition(SERVO_MAX);
+                    rightPushServo.setPosition(SERVO_MAX);
+                }
+
                 // intake forced forward while trigger pressed
-                intake.setPower(1.0);
+                //intake.setPower(1.0);
             } else {
-                // servos up
+                // Reset trigger tracking when released
+                triggerWasPressed = false;
+
+                // All servos up
                 leftServo.setPosition(SERVO_MAX);
                 middleServo.setPosition(SERVO_MAX);
                 rightServo.setPosition(SERVO_MAX);
+                leftPushServo.setPosition(SERVO_MAX);
+                rightPushServo.setPosition(SERVO_MAX);
 
                 // manual intake control when trigger not pressed (from gamepad2)
                 if (gamepad2.a) intake.setPower(1.0);
@@ -425,6 +474,33 @@ public class CompetitionTeleOp extends LinearOpMode {
             middleShooter.setPower(middlePower);
             leftShooter.setPower(leftPower);
 
+            // ---------- CHECK IF SHOOTERS ARE AT TARGET RPM ----------
+            boolean allEnabledShootersAtTarget = false;
+            boolean anyShooterEnabled = leftShooterEnabled || middleShooterEnabled || rightShooterEnabled;
+
+            if (anyShooterEnabled) {
+                boolean allAtTarget = true;
+
+                // Check each enabled shooter
+                if (leftShooterEnabled) {
+                    allAtTarget &= Math.abs(leftRPM - left_targetRPM) <= rpm_tolerance;
+                }
+                if (middleShooterEnabled) {
+                    allAtTarget &= Math.abs(middleRPM - middle_targetRPM) <= rpm_tolerance;
+                }
+                if (rightShooterEnabled) {
+                    allAtTarget &= Math.abs(rightRPM - right_targetRPM) <= rpm_tolerance;
+                }
+
+                allEnabledShootersAtTarget = allAtTarget;
+            }
+
+            // Vibrate gamepad2 when shooters reach target (edge trigger - only on transition)
+            if (allEnabledShootersAtTarget && !wasAtTargetRPM && anyShooterEnabled) {
+                gamepad2.rumble(vibration_duration_ms);
+            }
+            wasAtTargetRPM = allEnabledShootersAtTarget && anyShooterEnabled;
+
             // ---------- COLOR SENSORS: read values & occupancy ----------
             int lR = leftColor.red();
             int lG = leftColor.green();
@@ -477,6 +553,7 @@ public class CompetitionTeleOp extends LinearOpMode {
             telemetry.addData("Shooter Enabled (L/M/R)", "%b / %b / %b", leftShooterEnabled, middleShooterEnabled, rightShooterEnabled);
             telemetry.addData("Shooter RPMs (L/M/R)", "%.0f / %.0f / %.0f", leftRPM, middleRPM, rightRPM);
             telemetry.addData("Shooter Pwr  (L/M/R)", "%.3f / %.3f / %.3f", leftPower, middlePower, rightPower);
+            telemetry.addData("At Target RPM", allEnabledShootersAtTarget && anyShooterEnabled ? "YES" : "NO");
 
             telemetry.addLine();
             telemetry.addData("Sort Enabled", sorterEnabled);
