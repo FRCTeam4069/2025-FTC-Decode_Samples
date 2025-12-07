@@ -272,6 +272,7 @@ public class BlueFourCycles extends OpMode {
 
             case 5: // START SECOND SHOT (after pause)
                 if (!pathStarted) {
+                    intake.setPower(0);
                     shootingSequence.start(getRuntime());
                     pathStarted = true;
                 }
@@ -313,6 +314,7 @@ public class BlueFourCycles extends OpMode {
 
             case 9: // START THIRD SHOT (after pause)
                 if (!pathStarted) {
+                    intake.setPower(0);
                     shootingSequence.start(getRuntime());
                     pathStarted = true;
                 }

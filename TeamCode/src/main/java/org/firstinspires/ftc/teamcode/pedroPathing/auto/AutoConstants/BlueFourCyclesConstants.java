@@ -13,10 +13,10 @@ public final class BlueFourCyclesConstants {
     public static final double SHOOTER_KF = 0.0002;  // Reduced - was causing overshoot
 
     // Target shooter speed
-    public static final double TARGET_RPM = 3150.0;   // Your actual target
+    public static final double TARGET_RPM = 3150.0;   // Your actual target     //changed to 4200 just for far testing but put back to 3150RPM
 
     // Threshold to ensure consistent shots (95% of target)
-    public static final double RPM_THRESHOLD = 3087.0;
+    public static final double RPM_THRESHOLD = 3087.0;      //change back
 
     // Encoder constants
     public static final double TICKS_PER_REV = 28.0;
