@@ -40,14 +40,14 @@ public class DrivebaseControl {
     }
 
     /**
-     * Updates drivebase with rotation override (for Limelight locking)
+     * Updates drivebase with rotation override (for auto-centering)
      */
     public void updateDriveWithRotationOverride(double y, double x, double rotationCorrection) {
-        // Apply cubic inputs for smooth control
+        // Apply cubic inputs for smooth control (ONLY to translation)
         y = Math.pow(y, 3);
         x = Math.pow(x, 3);
 
-        // Apply slow mode scaling
+        // Apply slow mode scaling ONLY to translation
         double maxPower = slowModeEnabled ? 0.25 : 1.0;
 
         // Field-centric rotation
@@ -55,7 +55,8 @@ public class DrivebaseControl {
         double rotatedX = x * Math.cos(heading) - y * Math.sin(heading);
         double rotatedY = x * Math.sin(heading) + y * Math.cos(heading);
 
-        // Use provided rotation correction instead of joystick
+        // Use rotation correction directly - already computed by PID controller
+        // Do NOT apply cubic or slow mode to rotation correction
         follower.setTeleOpDrive(rotatedY * maxPower, rotatedX * maxPower, rotationCorrection, false);
     }
 

@@ -30,7 +30,7 @@ import java.util.List;
 
 
 @Configurable
-@TeleOp(name = "Bolton Competition TeleOp", group = "TeleOp")
+@TeleOp(name = "Testing TeleOp", group = "TeleOp")
 public class CompetitionTeleOp extends LinearOpMode {
 
     // -----------------------------------------------------------------------

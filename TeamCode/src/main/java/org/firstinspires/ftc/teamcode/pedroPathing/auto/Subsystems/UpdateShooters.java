@@ -16,6 +16,10 @@ public class UpdateShooters {
     private boolean shootersStarting = false;
     private double shooterStartTime = 0;
 
+    // Track if we're actively controlling shooters
+    private boolean shootersActive = false;
+    private boolean middleShooterDisabled = false; // New: track if middle shooter should stay off
+
     public boolean shootersAtSpeed = false;
     public boolean rightShooterReady = false;
     public boolean middleShooterReady = false;
@@ -29,7 +33,30 @@ public class UpdateShooters {
 
     public void startShooters(double currentTime) {
         shootersStarting = true;
+        shootersActive = true;
         shooterStartTime = currentTime;
+        middleShooterDisabled = false;
+    }
+
+    // New method: Start only side shooters (right and left)
+    public void startSideShoostersOnly(double currentTime) {
+        shootersStarting = true;
+        shootersActive = true;
+        shooterStartTime = currentTime;
+        middleShooterDisabled = true; // Disable middle shooter
+
+        // Ensure middle shooter is off
+        middleShooter.setPower(0);
+        middle_integral = 0;
+        middle_lastError = 0;
+    }
+
+    // New method: Stop only right shooter
+    public void stopRightShooter() {
+        rightShooter.setPower(0);
+        right_integral = 0;
+        right_lastError = 0;
+        rightShooterReady = false;
     }
 
     public void stopShooters() {
@@ -38,11 +65,21 @@ public class UpdateShooters {
         leftShooter.setPower(0);
 
         shootersStarting = false;
+        shootersActive = false;
+        shootersAtSpeed = false;
+        middleShooterDisabled = false;
         right_integral = middle_integral = left_integral = 0;
+        right_lastError = middle_lastError = left_lastError = 0;
     }
 
     public void updateShooters(double dt, double currentTime) {
+        // Only run PID if shooters are active
+        if (!shootersActive) {
+            shootersAtSpeed = false;
+            return;
+        }
 
+        // Staggered startup to reduce voltage spike
         if (shootersStarting) {
             double elapsedStartTime = currentTime - shooterStartTime;
 
@@ -51,30 +88,52 @@ public class UpdateShooters {
             }
 
             if (elapsedStartTime >= BlueFourCyclesConstants.SHOOTER_START_DELAY) {
-                runShooterPID(middleShooter, dt, 1);
+                // Only run middle shooter if not disabled
+                if (!middleShooterDisabled) {
+                    runShooterPID(middleShooter, dt, 1);
+                } else {
+                    middleShooter.setPower(0);
+                    middleShooterReady = true; // Mark as "ready" so it doesn't block shooting
+                }
             }
 
             if (elapsedStartTime >= BlueFourCyclesConstants.SHOOTER_START_DELAY * 2) {
                 runShooterPID(leftShooter, dt, 2);
-                shootersStarting = false;
+                shootersStarting = false; // All shooters now running
             }
 
+            // Don't check speed during startup
             return;
         }
+
+        // Normal operation - run PIDs for active shooters
+        runShooterPID(rightShooter, dt, 0);
+
+        if (!middleShooterDisabled) {
+            runShooterPID(middleShooter, dt, 1);
+        } else {
+            middleShooter.setPower(0);
+            middleShooterReady = true; // Keep marked as "ready"
+        }
+
+        runShooterPID(leftShooter, dt, 2);
 
         double rightRPM = getRPM(rightShooter);
         double middleRPM = getRPM(middleShooter);
         double leftRPM = getRPM(leftShooter);
 
         rightShooterReady  = rightRPM  >= BlueFourCyclesConstants.RPM_THRESHOLD;
-        middleShooterReady = middleRPM >= BlueFourCyclesConstants.RPM_THRESHOLD;
+
+        // If middle is disabled, it's always "ready"
+        if (!middleShooterDisabled) {
+            middleShooterReady = middleRPM >= BlueFourCyclesConstants.RPM_THRESHOLD;
+        } else {
+            middleShooterReady = true;
+        }
+
         leftShooterReady   = leftRPM   >= BlueFourCyclesConstants.RPM_THRESHOLD;
 
         shootersAtSpeed = rightShooterReady && middleShooterReady && leftShooterReady;
-
-        runShooterPID(rightShooter, dt, 0);
-        runShooterPID(middleShooter, dt, 1);
-        runShooterPID(leftShooter, dt, 2);
     }
 
     private void runShooterPID(DcMotorEx shooter, double dt, int index) {
@@ -86,16 +145,20 @@ public class UpdateShooters {
 
         if (index == 0) {
             right_integral += error * dt;
+            // Anti-windup: clamp integral
+            right_integral = Range.clip(right_integral, -100, 100);
             derivative = (error - right_lastError) / dt;
             right_lastError = error;
             integral = right_integral;
         } else if (index == 1) {
             middle_integral += error * dt;
+            middle_integral = Range.clip(middle_integral, -100, 100);
             derivative = (error - middle_lastError) / dt;
             middle_lastError = error;
             integral = middle_integral;
         } else {
             left_integral += error * dt;
+            left_integral = Range.clip(left_integral, -100, 100);
             derivative = (error - left_lastError) / dt;
             left_lastError = error;
             integral = left_integral;

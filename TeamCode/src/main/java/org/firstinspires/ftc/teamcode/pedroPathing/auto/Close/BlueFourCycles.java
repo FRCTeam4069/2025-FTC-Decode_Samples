@@ -13,6 +13,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.teamcode.pedroPathing.auto.AutoConstants.BlueFourCyclesConstants;
@@ -26,16 +27,17 @@ import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.StartShooting
 @Configurable
 public class BlueFourCycles extends OpMode {
 
-    // Telemetry
     private TelemetryManager panelsTelemetry;
-
-    // Pathing
     private Follower follower;
     private BlueFourCyclesPaths.Paths paths;
     private int pathState = 0;
     private boolean pathStarted = false;
 
-    // Hardware
+    // Pause timers
+    private boolean isPausing = false;
+    private double pauseStartTime = 0.0;
+    private double pauseDuration = 0.0;
+
     private DcMotor intake;
     private DcMotorEx rightShooter;
     private DcMotorEx middleShooter;
@@ -53,30 +55,24 @@ public class BlueFourCycles extends OpMode {
     private RevColorSensorV3 leftColor;
     private RevColorSensorV3 rightColor;
 
-    // Subsystems
     private UpdateShooters shooterSubsystem;
     private UpdateSorter sorterSubsystem;
     private StartShootingSequence shootingSequence;
     private StopRobot stopRobotSubsystem;
 
-
-    // Timing
     private double lastLoopTime = 0.0;
 
     @Override
     public void init() {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
 
-        // Path / follower init
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(new Pose(21, 123, Math.toRadians(-36)));
         paths = new BlueFourCyclesPaths.Paths(follower);
 
-        // ---------- INTAKE ----------
         intake = hardwareMap.get(DcMotor.class, "intake");
         intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        // ---------- SHOOTER MOTORS ----------
         rightShooter = hardwareMap.get(DcMotorEx.class, "rightShooter");
         middleShooter = hardwareMap.get(DcMotorEx.class, "middleShooter");
         leftShooter = hardwareMap.get(DcMotorEx.class, "leftShooter");
@@ -93,7 +89,6 @@ public class BlueFourCycles extends OpMode {
         middleShooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         leftShooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
-        // ---------- SERVOS ----------
         leftServo = hardwareMap.get(Servo.class, "leftServo");
         middleServo = hardwareMap.get(Servo.class, "middleServo");
         rightServo = hardwareMap.get(Servo.class, "rightServo");
@@ -108,28 +103,21 @@ public class BlueFourCycles extends OpMode {
         leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
         rightPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
 
-        // ---------- SORTER + COLOR SENSORS ----------
         sorterServo = hardwareMap.get(CRServo.class, "sorterServo");
         sorterServo2 = hardwareMap.get(CRServo.class, "sorterServo2");
         leftColor = hardwareMap.get(RevColorSensorV3.class, "leftColor");
         rightColor = hardwareMap.get(RevColorSensorV3.class, "rightColor");
 
-        // ---------- Subsystem construction ----------
         shooterSubsystem = new UpdateShooters(rightShooter, middleShooter, leftShooter);
         sorterSubsystem = new UpdateSorter(sorterServo, sorterServo2, leftColor, rightColor);
         shootingSequence = new StartShootingSequence(
                 shooterSubsystem,
-                intake,
                 leftServo, middleServo, rightServo,
-                leftPushServo, rightPushServo
+                leftPushServo, rightPushServo,
+                sorterServo, sorterServo2,
+                leftColor
         );
 
-        pathState = 0;
-        pathStarted = false;
-        lastLoopTime = 0.0;
-
-        panelsTelemetry.debug("Status", "Initialized");
-        panelsTelemetry.update(telemetry);
         stopRobotSubsystem = new StopRobot(
                 follower,
                 intake,
@@ -139,6 +127,15 @@ public class BlueFourCycles extends OpMode {
                 leftPushServo, rightPushServo
         );
 
+        pathState = 0;
+        pathStarted = false;
+        isPausing = false;
+        pauseStartTime = 0.0;
+        pauseDuration = 0.0;
+        lastLoopTime = 0.0;
+
+        panelsTelemetry.debug("Status", "Initialized");
+        panelsTelemetry.update(telemetry);
     }
 
     @Override
@@ -148,47 +145,52 @@ public class BlueFourCycles extends OpMode {
 
     @Override
     public void loop() {
-
-        // Update follower
         follower.update();
 
-        // dt for PID
         double now = getRuntime();
         double dt = now - lastLoopTime;
         if (dt <= 0) dt = 1e-6;
         lastLoopTime = now;
 
-        // Always update shooter PID (keeps state & readiness up-to-date)
+        // Always update shooter PID
         shooterSubsystem.updateShooters(dt, now);
 
-        // If shooting sequence active, update it (it handles servos/intake/shooter end)
+        // Update shooting sequence if active
         if (shootingSequence.isWaiting()) {
             boolean finished = shootingSequence.update(now);
             if (finished) {
-                // sequence finished → advance path
                 pathState++;
                 pathStarted = false;
             }
         }
 
-        // Update sorter during intake motions and movement when not in shooting wait
-        // (some states call sorter during follower busy)
-        // We'll call sorter every loop unless shooting is active
-        if (!shootingSequence.isWaiting()) {
+        // Handle pause timing
+        if (isPausing) {
+            if (now - pauseStartTime >= pauseDuration) {
+                isPausing = false;
+                pathState++;
+                pathStarted = false;
+            }
+        }
+
+        // Update sorter when not shooting or pausing
+        if (!shootingSequence.isWaiting() && !isPausing) {
             sorterSubsystem.updateSorter();
         }
 
-        // Path & auto state machine
         autonomousPathUpdate();
 
-        // Telemetry shooter RPMs
+        // Telemetry
         double rightRPM = rightShooter.getVelocity() * 60.0 / BlueFourCyclesConstants.TICKS_PER_REV;
         double middleRPM = middleShooter.getVelocity() * 60.0 / BlueFourCyclesConstants.TICKS_PER_REV;
         double leftRPM = leftShooter.getVelocity() * 60.0 / BlueFourCyclesConstants.TICKS_PER_REV;
 
         panelsTelemetry.debug("Path State", pathState);
+        panelsTelemetry.debug("Pausing", isPausing);
         panelsTelemetry.debug("Waiting (shooting)", shootingSequence.isWaiting());
+        panelsTelemetry.debug("Shooters at speed", shooterSubsystem.shootersAtSpeed);
         panelsTelemetry.debug("Shooter RPMs (R/M/L)", String.format("%.0f / %.0f / %.0f", rightRPM, middleRPM, leftRPM));
+        panelsTelemetry.debug("Left Color Green", leftColor.green());
         panelsTelemetry.debug("Follower isBusy", follower.isBusy());
         panelsTelemetry.debug("X", follower.getPose().getX());
         panelsTelemetry.debug("Y", follower.getPose().getY());
@@ -196,77 +198,86 @@ public class BlueFourCycles extends OpMode {
         panelsTelemetry.update(telemetry);
     }
 
-    private void startShootingSequence() {
-        shooterSubsystem.stopShooters();
-        shootingSequence.start(getRuntime());
-        pathStarted = false;    }
+    private void startPause(double duration) {
+        isPausing = true;
+        pauseStartTime = getRuntime();
+        pauseDuration = duration;
+    }
 
     private void stopRobot() {
-        stopRobotSubsystem.stopAll();      }
+        stopRobotSubsystem.stopAll();
+    }
 
     public void autonomousPathUpdate() {
-        if (shootingSequence.isWaiting()) {
-            return;     }
-        if (pathState > 7) {
+        if (shootingSequence.isWaiting() || isPausing) {
+            return;
+        }
+        if (pathState > 10) {
             stopRobot();
-            return;     }
-        switch (pathState) {
+            return;
+        }
 
-            // ---------- 0 : MOVE TO FIRST SHOT ----------
-            case 0:
+        switch (pathState) {
+            case 0: // MOVE TO FIRST SHOT
                 if (!pathStarted) {
                     follower.followPath(paths.MovetoFirstShot);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // begin shooting sequence (staggered startup etc)
-                    startShootingSequence();
+                    // 1 second pause before shooting
+                    startPause(1.0);
                 }
                 break;
 
-            // ---------- 1 : MOVE TO FIRST PICKUP ----------
-            case 1:
+            case 1: // START FIRST SHOT (after pause)
+                if (!pathStarted) {
+                    shootingSequence.start(getRuntime());
+                    pathStarted = true;
+                }
+                break;
+
+            case 2: // MOVE TO FIRST PICKUP
                 if (!pathStarted) {
                     follower.setMaxPower(0.75);
                     follower.followPath(paths.MovetoPickup);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    pathState++;
-                    pathStarted = false;
+                    // 0.5 second pause before intake path
+                    startPause(0.5);
                 }
                 break;
 
-            // ---------- 2 : FIRST PICKUP ----------
-            case 2:
+            case 3: // FIRST PICKUP (after pause)
                 if (!pathStarted) {
+                    follower.setMaxPower(0.46);  //was 0.42
                     follower.followPath(paths.Pickup);
+                    intake.setPower(0.650); //was 1
                     pathStarted = true;
-                    intake.setPower(1.0);
                 } else if (!follower.isBusy()) {
-                    follower.setMaxPower(1.0);
+                    follower.setMaxPower(0.650);
                     pathState++;
                     pathStarted = false;
-                } else {
-                    // During pickup while moving, keep updating sorter
-                    sorterSubsystem.updateSorter();
                 }
                 break;
 
-            // ---------- 3 : MOVE TO SECOND SHOT ----------
-            case 3:
+            case 4: // MOVE TO SECOND SHOT
                 if (!pathStarted) {
                     follower.followPath(paths.Movetosecondshot);
+                    intake.setPower(0.60);  //was 1
                     pathStarted = true;
-                    intake.setPower(1.0);
                 } else if (!follower.isBusy()) {
-                    // stop intake/sorter and start shooting
-                    startShootingSequence();
-                } else {
-                    sorterSubsystem.updateSorter();
+                    // 1 second pause before second shot
+                    startPause(1.0);
                 }
                 break;
 
-            // ---------- 4 : MOVE TO SECOND PICKUP ----------
-            case 4:
+            case 5: // START SECOND SHOT (after pause)
+                if (!pathStarted) {
+                    shootingSequence.start(getRuntime());
+                    pathStarted = true;
+                }
+                break;
+
+            case 6: // MOVE TO SECOND PICKUP
                 if (!pathStarted) {
                     follower.followPath(paths.MovetoPickUpTwo);
                     pathStarted = true;
@@ -276,40 +287,42 @@ public class BlueFourCycles extends OpMode {
                 }
                 break;
 
-            // ---------- 5 : SECOND PICKUP ----------
-            case 5:
+            case 7: // SECOND PICKUP
                 if (!pathStarted) {
+                    follower.setMaxPower(0.46);
                     follower.followPath(paths.PickUpTwo);
+                    intake.setPower(0.650);
                     pathStarted = true;
-                    intake.setPower(1.0);
                 } else if (!follower.isBusy()) {
                     follower.setMaxPower(1.0);
                     pathState++;
                     pathStarted = false;
-                } else {
-                    sorterSubsystem.updateSorter();
                 }
                 break;
 
-            // ---------- 6 : MOVE TO THIRD SHOT ----------
-            case 6:
+            case 8: // MOVE TO THIRD SHOT
                 if (!pathStarted) {
                     follower.followPath(paths.MovetoShootThree);
+                    intake.setPower(1.0);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    startShootingSequence();
-                } else {
-                    sorterSubsystem.updateSorter();
+                    // 1 second pause before third shot
+                    startPause(1.0);
                 }
                 break;
 
-            // ---------- 7 : FINAL MOVE / SHUTDOWN ----------
-            case 7:
+            case 9: // START THIRD SHOT (after pause)
+                if (!pathStarted) {
+                    shootingSequence.start(getRuntime());
+                    pathStarted = true;
+                }
+                break;
+
+            case 10: // FINAL MOVE
                 if (!pathStarted) {
                     follower.followPath(paths.MovetoPickUpThree);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // Stop shooters and finish
                     shooterSubsystem.stopShooters();
                     pathState++;
                     pathStarted = false;

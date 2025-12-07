@@ -16,6 +16,7 @@ public class SorterControls {
     private RevColorSensorV3 rightColor;
 
     private boolean sorterEnabled = true;
+    private boolean inwardSpinMode = false;
 
     public SorterControls(DcMotor intake, CRServo sorterServo, CRServo sorterServo2,
                           RevColorSensorV3 leftColor, RevColorSensorV3 rightColor) {
@@ -48,6 +49,10 @@ public class SorterControls {
                 // Manual override: left = counter-clockwise, right = clockwise
                 sorterPower1 = leftStickX;
                 sorterPower2 = leftStickX;
+            } else if (inwardSpinMode) {
+                // Inward spin mode (toggled by X button)
+                sorterPower1 = -1.0;
+                sorterPower2 = 1.0;
             } else {
                 // Default: both spinning in opposite directions
                 sorterPower1 = 1.0;
@@ -64,6 +69,13 @@ public class SorterControls {
      */
     public void toggleSorter() {
         sorterEnabled = !sorterEnabled;
+    }
+
+    /**
+     * Toggles inward spin mode
+     */
+    public void toggleInwardSpin() {
+        inwardSpinMode = !inwardSpinMode;
     }
 
     /**
@@ -103,6 +115,10 @@ public class SorterControls {
     // Getters
     public boolean isSorterEnabled() {
         return sorterEnabled;
+    }
+
+    public boolean isInwardSpinMode() {
+        return inwardSpinMode;
     }
 
     public double getSorterPower() {

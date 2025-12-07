@@ -35,7 +35,7 @@ public class UpdateSorter {
 
         if (l < 100 && r < 100) {
             sorterServo.setPower(1.0);
-            sorterServo2.setPower(1.0);
+            sorterServo2.setPower(-1.0);
         } else if (r > 100 && l < 100) {
             sorterServo.setPower(-1.0);
             sorterServo2.setPower(-1.0);

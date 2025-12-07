@@ -6,21 +6,22 @@ package org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems;
 public class ShooterInterpolation {
 
     private boolean isInterpolationShooting = false;
-    private double interpolatedTargetRPM = 3500.0;
+    private double interpolatedTargetRPM = 3250.0;
     private boolean servosLowered = false;
     private double servoLowerTime = 0.0;
 
     /**
      * Starts interpolation shooting sequence
      */
-    public void startInterpolationSequence(double distanceInches) {
+    public void startInterpolationSequence(double distanceInches, boolean hasAprilTag) {
         isInterpolationShooting = true;
         servosLowered = false;
 
-        if (distanceInches > 0) {
+        if (hasAprilTag && distanceInches > 0) {
             interpolatedTargetRPM = interpolateRPM(distanceInches) + RobotConstants.rpm_offset;
         } else {
-            interpolatedTargetRPM = 3500.0;
+            // No AprilTag in view - use default RPM
+            interpolatedTargetRPM = 3250.0;
         }
     }
 
@@ -76,7 +77,7 @@ public class ShooterInterpolation {
         }
 
         // Fallback
-        return 3500.0;
+        return 3250.0;
     }
 
     // Getters

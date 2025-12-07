@@ -169,6 +169,15 @@ public class ShooterControls {
         return allAtTarget;
     }
 
+    /**
+     * Enables all shooters
+     */
+    public void enableAllShooters() {
+        rightShooterEnabled = true;
+        middleShooterEnabled = true;
+        leftShooterEnabled = true;
+    }
+
     // Enable/disable methods
     public void setRightShooterEnabled(boolean enabled) {
         this.rightShooterEnabled = enabled;

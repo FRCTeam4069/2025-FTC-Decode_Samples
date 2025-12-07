@@ -1,5 +1,7 @@
 package org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems;
 
+import com.qualcomm.hardware.rev.RevColorSensorV3;
+import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Servo;
 
@@ -8,13 +10,31 @@ import org.firstinspires.ftc.teamcode.pedroPathing.auto.AutoConstants.BlueFourCy
 public class StartShootingSequence {
 
     private UpdateShooters shooterSubsystem;
-    private DcMotor intake;
     private Servo leftServo, middleServo, rightServo, leftPushServo, rightPushServo;
+    private CRServo sorterServo, sorterServo2;
+    private RevColorSensorV3 leftColor;
 
     private boolean waiting = false;
-    private boolean blockersLowered = false;
+    private boolean sideBallsBlockersLowered = false;
+    private boolean sideBallsPushServosFired = false;
+    private boolean sideBallsShot = false;
     private double waitStartTime = 0;
-    private double blockerServoDownTime = 0;
+    private double sideBallsBlockerDownTime = 0;
+    private double sideBallsPushServoFireTime = 0;
+    private double sideBallsShotTime = 0;
+
+    // New: Track if shooters have reached speed
+    private boolean shootersReachedSpeed = false;
+
+    // New: Track middle ball transfer sequence
+    private boolean leftPushServoRaised = false;
+    private boolean transferringMiddleBall = false;
+    private boolean middleBallDetected = false;
+    private boolean middleBallBlockerLowered = false;
+    private boolean middleBallPushServoFired = false;
+    private double transferStartTime = 0;
+    private double middleBallBlockerDownTime = 0;
+    private double middleBallPushServoFireTime = 0;
 
     public boolean isWaiting() {
         return waiting;
@@ -22,32 +42,53 @@ public class StartShootingSequence {
 
     public StartShootingSequence(
             UpdateShooters shooterSubsystem,
-            DcMotor intake,
             Servo leftServo, Servo middleServo, Servo rightServo,
-            Servo leftPushServo, Servo rightPushServo) {
+            Servo leftPushServo, Servo rightPushServo,
+            CRServo sorterServo, CRServo sorterServo2,
+            RevColorSensorV3 leftColor) {
         this.shooterSubsystem = shooterSubsystem;
-        this.intake = intake;
         this.leftServo = leftServo;
         this.middleServo = middleServo;
         this.rightServo = rightServo;
         this.leftPushServo = leftPushServo;
         this.rightPushServo = rightPushServo;
+        this.sorterServo = sorterServo;
+        this.sorterServo2 = sorterServo2;
+        this.leftColor = leftColor;
     }
 
     public void start(double currentTime) {
         waitStartTime = currentTime;
-        blockerServoDownTime = 0;
+        sideBallsBlockerDownTime = 0;
+        sideBallsPushServoFireTime = 0;
+        sideBallsShotTime = 0;
         waiting = true;
-        blockersLowered = false;
+        sideBallsBlockersLowered = false;
+        sideBallsPushServosFired = false;
+        sideBallsShot = false;
+        shootersReachedSpeed = false;
+        leftPushServoRaised = false;
+        transferringMiddleBall = false;
+        middleBallDetected = false;
+        middleBallBlockerLowered = false;
+        middleBallPushServoFired = false;
+        transferStartTime = 0;
+        middleBallBlockerDownTime = 0;
+        middleBallPushServoFireTime = 0;
 
-        shooterSubsystem.startShooters(currentTime);
-        intake.setPower(0);
+        // Start ONLY right and left shooters (not middle)
+        shooterSubsystem.startSideShoostersOnly(currentTime);
 
-        leftServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
-        middleServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+        // Ensure blocker servos are up (remember: leftServo is actually middle, middleServo is actually left)
+        leftServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);  // Actually middle blocker
+        middleServo.setPosition(BlueFourCyclesConstants.SERVO_MAX); // Actually left blocker
         rightServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
-        leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+        leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);  // Actually middle push
         rightPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+
+        // Stop sorter initially
+        sorterServo.setPower(0);
+        sorterServo2.setPower(0);
     }
 
     public boolean update(double currentTime) {
@@ -56,22 +97,131 @@ public class StartShootingSequence {
         double elapsed = currentTime - waitStartTime;
         boolean timedOut = elapsed >= BlueFourCyclesConstants.SHOOTER_TIMEOUT;
 
-        if ((shooterSubsystem.shootersAtSpeed || timedOut) && !blockersLowered) {
-            leftServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);
-            middleServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);
-            rightServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);
-            blockerServoDownTime = currentTime;
-            blockersLowered = true;
+        // === PHASE 1: Side shooters spin up ===
+        if ((shooterSubsystem.shootersAtSpeed || timedOut) && !shootersReachedSpeed) {
+            shootersReachedSpeed = true;
         }
 
-        if (blockersLowered) {
-            if (currentTime - blockerServoDownTime >= BlueFourCyclesConstants.PUSH_SERVO_DELAY) {
-                leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);
-                rightPushServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);
+        // === PHASE 2: Lower BOTH side blockers and shoot BOTH side balls simultaneously ===
+        if (shootersReachedSpeed && !sideBallsBlockersLowered) {
+            // Lower BOTH right blocker and left blocker at the same time
+            // Remember: middleServo is actually left blocker
+            middleServo.setPosition(BlueFourCyclesConstants.SERVO_MIN); // Actually left blocker
+            rightServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);   // Right blocker
+            sideBallsBlockerDownTime = currentTime;
+            sideBallsBlockersLowered = true;
+        }
+
+        // Fire BOTH push servos at the same time after blocker delay
+        if (sideBallsBlockersLowered && !sideBallsPushServosFired) {
+            if (currentTime - sideBallsBlockerDownTime >= BlueFourCyclesConstants.PUSH_SERVO_DELAY) {
+                // Fire BOTH side push servos simultaneously
+                // Remember: leftPushServo is actually middle push, so we skip it
+                rightPushServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);  // Right push servo
+                leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);      // Keep left blocker down
+                sideBallsPushServoFireTime = currentTime;
+                sideBallsPushServosFired = true;
             }
         }
 
-        if (elapsed >= 3.0) {
+
+        // === PHASE 3: Wait for side balls to shoot, then reset side servos ===
+        if (sideBallsPushServosFired && !sideBallsShot) {
+            if (currentTime - sideBallsPushServoFireTime >= 0.5) {
+                // Both side balls have shot
+                sideBallsShot = true;
+                sideBallsShotTime = currentTime;
+
+                // Stop right shooter (left shooter stays on)
+                shooterSubsystem.stopRightShooter();
+
+                // Reset side servos to get out of the way
+                middleServo.setPosition(BlueFourCyclesConstants.SERVO_MAX); // Actually left blocker - raise it
+                rightServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);   // Right blocker - raise it
+                rightPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX); // Right push - reset it
+
+                // IMPORTANT: Raise left push servo to get out of the way (leftPushServo is actually middle push)
+                leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX); // Raise middle push servo
+            }
+        }
+
+        // === PHASE 4: Raise left push servo completely before starting transfer ===
+        if (sideBallsShot && !leftPushServoRaised) {
+            if (currentTime - sideBallsShotTime >= 0.2) { // Small delay to ensure servo is up
+                leftPushServoRaised = true;
+
+                // NOW start transferring middle ball to left
+                transferringMiddleBall = true;
+                transferStartTime = currentTime;
+                // Both sorter servos spin left at -1
+                sorterServo.setPower(-1.0);
+                sorterServo2.setPower(-1.0);
+            }
+        }
+
+        // === PHASE 5: Wait for middle ball to reach left sensor ===
+        if (transferringMiddleBall && !middleBallDetected) {
+            int l = leftColor.green();
+            if (l > 100) {
+                // Ball detected on left sensor
+                sorterServo.setPower(-1.0);
+                sorterServo2.setPower(-1.0);
+                middleBallDetected = true;
+                middleBallBlockerDownTime = currentTime;
+            }
+
+            // Safety timeout for transfer
+            if (currentTime - transferStartTime >= 5.0) {
+                sorterServo.setPower(0);
+                sorterServo2.setPower(0);
+                middleBallDetected = true;
+                middleBallBlockerDownTime = currentTime;
+            }
+        }
+
+        // === PHASE 6: Wait for shooter to be at RPM, then lower left blocker for middle ball ===
+        if (middleBallDetected && !middleBallBlockerLowered) {
+            // Check if left shooter is at speed
+            if (shooterSubsystem.leftShooterReady) {
+                // Lower left blocker (middleServo is actually left blocker)
+                middleServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);
+                middleBallBlockerLowered = true;
+            }
+
+            // Safety timeout - lower blocker anyway after 1 second
+            if (currentTime - middleBallBlockerDownTime >= 1.0) {
+                middleServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);
+                middleBallBlockerLowered = true;
+            }
+        }
+
+        // === PHASE 7: Fire left push servo for middle ball ===
+        if (middleBallBlockerLowered && !middleBallPushServoFired) {
+            if (currentTime - middleBallBlockerDownTime >= BlueFourCyclesConstants.PUSH_SERVO_DELAY) {
+                // Fire the actual left push servo
+                // Since leftPushServo is wired as middle push, and middleServo is wired as left blocker,
+                // we need to figure out the actual left push servo
+                // Looking at the pattern: if middleServo = left blocker, then maybe we don't have a separate left push?
+                // Let's just keep the blocker down and the ball should shoot
+                middleServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);// Keep left blocker down
+                leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);
+                middleBallPushServoFireTime = currentTime;
+                middleBallPushServoFired = true;
+            }
+        }
+
+        // === PHASE 8: Complete sequence after middle ball shoots ===
+        if (middleBallPushServoFired) {
+            if (currentTime - middleBallPushServoFireTime >= 0.5) {
+                sorterServo.setPower(0.0);
+                sorterServo2.setPower(0.0);
+                stop();
+                return true;
+            }
+        }
+
+        // Safety timeout
+        if (elapsed >= BlueFourCyclesConstants.SHOOTER_TIMEOUT + 5.0) {
             stop();
             return true;
         }
@@ -81,11 +231,21 @@ public class StartShootingSequence {
 
     public void stop() {
         waiting = false;
-        blockersLowered = false;
+        sideBallsBlockersLowered = false;
+        sideBallsPushServosFired = false;
+        sideBallsShot = false;
+        shootersReachedSpeed = false;
+        leftPushServoRaised = false;
+        transferringMiddleBall = false;
+        middleBallDetected = false;
+        middleBallBlockerLowered = false;
+        middleBallPushServoFired = false;
 
-        shooterSubsystem.stopShooters();
-        intake.setPower(0);
+        // Stop sorter
+        sorterServo.setPower(0);
+        sorterServo2.setPower(0);
 
+        // Reset all servos
         leftServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
         middleServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
         rightServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);

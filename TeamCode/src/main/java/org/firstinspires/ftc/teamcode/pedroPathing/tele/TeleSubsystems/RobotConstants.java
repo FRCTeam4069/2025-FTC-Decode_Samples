@@ -12,33 +12,33 @@ public class RobotConstants {
     public static double right_kP = 0.00015;
     public static double right_kI = 0.0;
     public static double right_kD = 0.0001;
-    public static double right_kF = 0.00025;
-    public static double right_targetRPM = 3500.0;
+    public static double right_kF = 0.0002;     //Was 0.0025
+    public static double right_targetRPM = 3250.0;
 
     // Middle shooter
     public static double middle_kP = 0.00015;
     public static double middle_kI = 0.0;
     public static double middle_kD = 0.0001;
     public static double middle_kF = 0.0002;
-    public static double middle_targetRPM = 3500.0;
+    public static double middle_targetRPM = 3250.0;
 
     // Left shooter
     public static double left_kP = 0.00015;
     public static double left_kI = 0.0;
     public static double left_kD = 0.0001;
     public static double left_kF = 0.0002;
-    public static double left_targetRPM = 3500.0;
+    public static double left_targetRPM = 3250.0;
 
     // -----------------------------------------------------------------------
     // Interpolation offset
     // -----------------------------------------------------------------------
-    public static double rpm_offset = 0.0;
+    public static double rpm_offset = 100.0;
 
     // -----------------------------------------------------------------------
     // Limelight PID values
     // -----------------------------------------------------------------------
-    public static double limelight_kP = 0.012;
-    public static double limelight_kD = 0.002;
+    public static double limelight_kP = 0.0005;
+    public static double limelight_kD = 0.0025;
     public static double limelight_minCmd = 0.06;
     public static double limelight_deadband = 1.8;
     public static double limelight_maxSpeed = 0.3;
