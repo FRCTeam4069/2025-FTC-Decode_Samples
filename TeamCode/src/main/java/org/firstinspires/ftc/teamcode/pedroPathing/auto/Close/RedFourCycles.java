@@ -38,6 +38,11 @@ public class RedFourCycles extends OpMode {
     private double pauseStartTime = 0.0;
     private double pauseDuration = 0.0;
 
+    // Auto timeout
+    private static final double AUTO_TIMEOUT = 28.0;
+    private double autoStartTime = 0.0;
+    private boolean timeoutTriggered = false;
+
     private DcMotor intake;
     private DcMotorEx rightShooter;
     private DcMotorEx middleShooter;
@@ -67,7 +72,7 @@ public class RedFourCycles extends OpMode {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
 
         follower = Constants.createFollower(hardwareMap);
-        follower.setStartingPose(new Pose(21, 21, Math.toRadians(216)));
+        follower.setStartingPose(new Pose(21, 21, Math.toRadians(36)));
         paths = new RedFourCyclesPaths.Paths(follower);
 
         intake = hardwareMap.get(DcMotor.class, "intake");
@@ -133,6 +138,7 @@ public class RedFourCycles extends OpMode {
         pauseStartTime = 0.0;
         pauseDuration = 0.0;
         lastLoopTime = 0.0;
+        timeoutTriggered = false;
 
         panelsTelemetry.debug("Status", "Initialized");
         panelsTelemetry.update(telemetry);
@@ -141,6 +147,7 @@ public class RedFourCycles extends OpMode {
     @Override
     public void start() {
         lastLoopTime = getRuntime();
+        autoStartTime = getRuntime();
     }
 
     @Override
@@ -151,6 +158,23 @@ public class RedFourCycles extends OpMode {
         double dt = now - lastLoopTime;
         if (dt <= 0) dt = 1e-6;
         lastLoopTime = now;
+
+        // Check for timeout (28 seconds since start)
+        double elapsedTime = now - autoStartTime;
+        if (elapsedTime >= AUTO_TIMEOUT && !timeoutTriggered && pathState < 10) {
+            // Cancel any active shooting sequence or pause
+            shootingSequence.cancel();
+            isPausing = false;
+
+            // Stop intake and jump to final path
+            intake.setPower(0);
+            shooterSubsystem.stopShooters();
+
+            // Jump to final path state
+            pathState = 10;
+            pathStarted = false;
+            timeoutTriggered = true;
+        }
 
         // Always update shooter PID
         shooterSubsystem.updateShooters(dt, now);
@@ -185,6 +209,8 @@ public class RedFourCycles extends OpMode {
         double middleRPM = middleShooter.getVelocity() * 60.0 / BlueFourCyclesConstants.TICKS_PER_REV;
         double leftRPM = leftShooter.getVelocity() * 60.0 / BlueFourCyclesConstants.TICKS_PER_REV;
 
+        panelsTelemetry.debug("Auto Time", String.format("%.1f / %.1f", elapsedTime, AUTO_TIMEOUT));
+        panelsTelemetry.debug("Timeout Triggered", timeoutTriggered);
         panelsTelemetry.debug("Path State", pathState);
         panelsTelemetry.debug("Pausing", isPausing);
         panelsTelemetry.debug("Waiting (shooting)", shootingSequence.isWaiting());
@@ -223,7 +249,6 @@ public class RedFourCycles extends OpMode {
                     follower.followPath(paths.MovetoFirstShot);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // 1 second pause before shooting
                     startPause(1.0);
                 }
                 break;
@@ -241,16 +266,15 @@ public class RedFourCycles extends OpMode {
                     follower.followPath(paths.MovetoPickup);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // 0.5 second pause before intake path
                     startPause(0.5);
                 }
                 break;
 
             case 3: // FIRST PICKUP (after pause)
                 if (!pathStarted) {
-                    follower.setMaxPower(0.46);  //was 0.42
+                    follower.setMaxPower(0.46);
                     follower.followPath(paths.Pickup);
-                    intake.setPower(0.650); //was 1
+                    intake.setPower(0.650);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
                     follower.setMaxPower(0.650);
@@ -262,10 +286,9 @@ public class RedFourCycles extends OpMode {
             case 4: // MOVE TO SECOND SHOT
                 if (!pathStarted) {
                     follower.followPath(paths.Movetosecondshot);
-                    intake.setPower(0.60);  //was 1
+                    intake.setPower(0.60);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // 1 second pause before second shot
                     startPause(1.0);
                 }
                 break;
@@ -307,7 +330,6 @@ public class RedFourCycles extends OpMode {
                     intake.setPower(1.0);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // 1 second pause before third shot
                     startPause(1.0);
                 }
                 break;

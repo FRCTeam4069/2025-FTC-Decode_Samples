@@ -201,7 +201,7 @@ public class StartShootingSequence {
                 // Fire the actual left push servo
                 // Since leftPushServo is wired as middle push, and middleServo is wired as left blocker,
                 // we need to figure out the actual left push servo
-                // Looking at the pattern: if middleServo = left blocker, then maybe we don't have a separate left push?
+                // Looking at the pattern: if middleServo = left blocker, and maybe we don't have a separate left push?
                 // Let's just keep the blocker down and the ball should shoot
                 middleServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);// Keep left blocker down
                 leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MIN);
@@ -251,5 +251,10 @@ public class StartShootingSequence {
         rightServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
         leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
         rightPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+    }
+
+    public void cancel() {
+        // Emergency cancel for timeout - immediately stop everything
+        stop();
     }
 }
