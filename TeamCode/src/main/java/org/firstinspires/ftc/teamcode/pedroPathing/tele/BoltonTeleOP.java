@@ -1,16 +1,7 @@
 package org.firstinspires.ftc.teamcode.pedroPathing.tele;
 
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.AutoCenteringController;
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.PoseEstimator;
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.BlockerServos;
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.DrivebaseControl;
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.LimelightCentering;
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.PusherServos;
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.RobotConstants;
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.ShooterControls;
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.ShooterInterpolation;
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.SorterControls;
-import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.TelemetryHelper;
+import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.*;
+
 import com.bylazar.configurables.annotations.Configurable;
 import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
@@ -25,19 +16,18 @@ import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.Servo;
-
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.RobotConstants;
 
 @Configurable
-@TeleOp(name = "TeleOp with Pose Estimation", group = "TeleOp")
-public class TeleOpLimelightLocking extends LinearOpMode {
+@TeleOp(name = "Bolton Competition TeleOp", group = "TeleOp")
+public class BoltonTeleOP extends LinearOpMode {
 
     // Subsystems
     private Follower follower;
     private TelemetryManager telemetryM;
-
     private DrivebaseControl drivebase;
-    private LimelightCentering limelight;
+    private AprilTagCentering aprilTagCentering;
     private ShooterControls shooter;
     private ShooterInterpolation interpolation;
     private BlockerServos blockerServos;
@@ -45,11 +35,7 @@ public class TeleOpLimelightLocking extends LinearOpMode {
     private SorterControls sorterControls;
     private TelemetryHelper telemetryHelper;
 
-    // NEW: Pose estimation system
-    private PoseEstimator poseEstimator;
-    private AutoCenteringController autoCentering;
-
-    // Toggle state tracking
+    // Button debounce
     private boolean dpadLeftReady = true;
     private boolean dpadRightReady = true;
     private boolean dpadUpReady = true;
@@ -57,23 +43,20 @@ public class TeleOpLimelightLocking extends LinearOpMode {
     private boolean rightStickReady = true;
     private boolean xButtonReady = true;
 
-    // Vibration state
     private boolean wasAtTargetRPM = false;
-
-    // Timing
     private double lastLoopTime = 0.0;
 
     @Override
     public void runOpMode() throws InterruptedException {
 
-        // ---------- INITIALIZE FOLLOWER ----------
+        // ---------- FOLLOWER ----------
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(new Pose());
         follower.update();
 
         telemetryM = PanelsTelemetry.INSTANCE.getTelemetry();
 
-        // ---------- INITIALIZE IMU ----------
+        // ---------- IMU ----------
         BNO055IMU.Parameters imuParams = new BNO055IMU.Parameters();
         imuParams.mode = BNO055IMU.SensorMode.IMU;
         imuParams.angleUnit = BNO055IMU.AngleUnit.RADIANS;
@@ -88,17 +71,15 @@ public class TeleOpLimelightLocking extends LinearOpMode {
             telemetry.update();
             sleep(10);
         }
-        telemetry.addLine(imu.isGyroCalibrated() ? "IMU Ready" : "IMU Calibration Failed");
 
-        // ---------- INITIALIZE LIMELIGHT ----------
+        // ---------- LIMELIGHT ----------
         Limelight3A limelightHardware = hardwareMap.get(Limelight3A.class, "Limelight");
         limelightHardware.setPollRateHz(100);
         limelightHardware.pipelineSwitch(0);
         limelightHardware.start();
 
-        // ---------- INITIALIZE HARDWARE ----------
+        // ---------- HARDWARE ----------
         DcMotor intake = hardwareMap.get(DcMotor.class, "intake");
-
         CRServo sorterServo = hardwareMap.get(CRServo.class, "sorterServo");
         CRServo sorterServo2 = hardwareMap.get(CRServo.class, "sorterServo2");
         RevColorSensorV3 leftColor = hardwareMap.get(RevColorSensorV3.class, "leftColor");
@@ -114,9 +95,11 @@ public class TeleOpLimelightLocking extends LinearOpMode {
         DcMotorEx middleShooter = hardwareMap.get(DcMotorEx.class, "middleShooter");
         DcMotorEx leftShooter = hardwareMap.get(DcMotorEx.class, "leftShooter");
 
-        // ---------- INITIALIZE SUBSYSTEMS ----------
+        // ---------- SUBSYSTEMS ----------
         drivebase = new DrivebaseControl(follower, imu);
-        limelight = new LimelightCentering(limelightHardware);
+        aprilTagCentering = new AprilTagCentering(
+                follower, imu, limelightHardware, gamepad1, gamepad2
+        );
         shooter = new ShooterControls(rightShooter, middleShooter, leftShooter);
         interpolation = new ShooterInterpolation();
         blockerServos = new BlockerServos(leftServo, middleServo, rightServo);
@@ -124,87 +107,60 @@ public class TeleOpLimelightLocking extends LinearOpMode {
         sorterControls = new SorterControls(intake, sorterServo, sorterServo2, leftColor, rightColor);
         telemetryHelper = new TelemetryHelper(telemetry);
 
-        // ---------- INITIALIZE POSE ESTIMATION SYSTEM ----------
-        poseEstimator = new PoseEstimator(follower, imu, limelightHardware);
-        autoCentering = new AutoCenteringController(follower, imu, poseEstimator);
-
-        // ---------- READY ----------
-        telemetry.addLine("TeleOp with Pose Estimation Ready");
-        telemetry.addLine("Right Trigger = Auto-center on goal (vision-free!)");
+        telemetry.addLine("TeleOp Ready - AprilTag Centering Enabled");
         telemetry.update();
 
         waitForStart();
         follower.startTeleopDrive(true);
-
         lastLoopTime = getRuntime();
 
         while (opModeIsActive()) {
             follower.update();
             telemetryM.update();
 
-            // NEW: Update pose estimation system every cycle
-            poseEstimator.update();
-
-            // Calculate delta time
             double now = getRuntime();
             double dt = now - lastLoopTime;
             if (dt <= 0) dt = 1e-6;
             lastLoopTime = now;
 
-            // ---------- UPDATE LIMELIGHT ----------
-            limelight.update();
-
-            // ---------- SORTER CONTROL ----------
-            // Right stick click toggles sorter on/off
+            // ---------- SORTER ----------
             if (gamepad2.right_stick_button && rightStickReady) {
                 sorterControls.toggleSorter();
                 rightStickReady = false;
             }
-            if (!gamepad2.right_stick_button) {
-                rightStickReady = true;
-            }
+            if (!gamepad2.right_stick_button) rightStickReady = true;
 
-            // X button toggles inward spin mode
             if (gamepad2.x && xButtonReady) {
                 sorterControls.toggleInwardSpin();
                 xButtonReady = false;
             }
-            if (!gamepad2.x) {
-                xButtonReady = true;
-            }
+            if (!gamepad2.x) xButtonReady = true;
 
             sorterControls.updateSorter(gamepad2.left_stick_x);
 
-            // ---------- CONTROL FLAGS ----------
-            boolean centeringGamepad1 = gamepad1.right_trigger > RobotConstants.TRIGGER_THRESHOLD;
-            boolean centeringGamepad2 = gamepad2.right_trigger > RobotConstants.TRIGGER_THRESHOLD;
+            // ---------- INTERPOLATION SHOOTING ----------
+            boolean interpolating = gamepad2.right_trigger > RobotConstants.TRIGGER_THRESHOLD;
 
-            // ---------- INTERPOLATION SHOOTING SEQUENCE ----------
-            if (centeringGamepad2) {
+            if (interpolating) {
                 if (!interpolation.isInterpolationShooting()) {
-                    // Start interpolation sequence and automatically enable all shooters
                     shooter.enableAllShooters();
-                    interpolation.startInterpolationSequence(limelight.getDistanceInches(), limelight.isTagVisible());
+                    interpolation.startInterpolationSequence(
+                            aprilTagCentering.getDistanceInches(),
+                            aprilTagCentering.isTagVisible()
+                    );
                 }
-
-                // Run intake while holding right trigger
                 sorterControls.setIntakePower(1.0);
 
-                // Manage servo positions based on shooter state
                 if (!interpolation.areServosLowered()) {
-                    // Keep servos up until shooters reach target
                     blockerServos.setAllUp();
                     pusherServos.setAllUp();
-
-                    // Check if shooters reached target
                     double targetRPM = interpolation.getInterpolatedTargetRPM();
-                    if (shooter.areAllEnabledShootersAtTarget(targetRPM, targetRPM, targetRPM)) {
+                    if (shooter.areAllEnabledShootersAtTarget(
+                            targetRPM, targetRPM, targetRPM)) {
                         interpolation.setServosLowered(now);
                     }
                 } else {
-                    // Shooters at target - lower servos with delay
                     blockerServos.setAllDown();
-
                     if (interpolation.shouldLowerPushServos(now)) {
                         pusherServos.setAllDown();
                     } else {
@@ -212,24 +168,20 @@ public class TeleOpLimelightLocking extends LinearOpMode {
                     }
                 }
             } else {
-                // Trigger released - reset
                 interpolation.stopInterpolationSequence();
                 blockerServos.setAllUp();
                 pusherServos.setAllUp();
 
-                // Manual intake control
                 if (gamepad2.a) sorterControls.setIntakePower(1.0);
                 else if (gamepad2.b) sorterControls.setIntakePower(-1.0);
                 else sorterControls.setIntakePower(0.0);
             }
 
-            // ---------- SHOOTER TOGGLES (gamepad2) ----------
-            // Left trigger turns off all shooters
+            // ---------- SHOOTER TOGGLES ----------
             if (gamepad2.left_trigger > RobotConstants.TRIGGER_THRESHOLD) {
                 shooter.disableAllShooters();
             }
 
-            // D-pad controls individual shooters (kept for manual control if needed)
             if (gamepad2.dpad_left && dpadLeftReady) {
                 shooter.setLeftShooterEnabled(!shooter.isLeftShooterEnabled());
                 dpadLeftReady = false;
@@ -248,33 +200,28 @@ public class TeleOpLimelightLocking extends LinearOpMode {
             }
             if (!gamepad2.dpad_up) dpadUpReady = true;
 
-            // ---------- SLOW MODE TOGGLE ----------
+            // ---------- SLOW MODE ----------
             if (gamepad1.right_bumper && rightBumperReady) {
                 drivebase.toggleSlowMode();
                 rightBumperReady = false;
             }
-            if (!gamepad1.right_bumper) {
-                rightBumperReady = true;
-            }
+            if (!gamepad1.right_bumper) rightBumperReady = true;
 
-            // ---------- UPDATE SHOOTER MOTORS ----------
-            // Determine target RPMs based on mode
+            // ---------- SHOOTER RPM ----------
             double rightTarget, middleTarget, leftTarget;
             if (interpolation.isInterpolationShooting()) {
-                double interpRPM = interpolation.getInterpolatedTargetRPM();
-                rightTarget = interpRPM;
-                middleTarget = interpRPM;
-                leftTarget = interpRPM;
+                double rpm = interpolation.getInterpolatedTargetRPM();
+                rightTarget = middleTarget = leftTarget = rpm;
             } else {
                 rightTarget = RobotConstants.right_targetRPM;
                 middleTarget = RobotConstants.middle_targetRPM;
                 leftTarget = RobotConstants.left_targetRPM;
             }
-
             shooter.update(dt, rightTarget, middleTarget, leftTarget);
 
-            // ---------- VIBRATION FEEDBACK ----------
-            boolean allAtTarget = shooter.areAllEnabledShootersAtTarget(rightTarget, middleTarget, leftTarget);
+            // ---------- VIBRATION ----------
+            boolean allAtTarget = shooter.areAllEnabledShootersAtTarget(
+                    rightTarget, middleTarget, leftTarget);
             boolean anyEnabled = shooter.isAnyShooterEnabled();
 
             if (allAtTarget && !wasAtTargetRPM && anyEnabled) {
@@ -282,61 +229,34 @@ public class TeleOpLimelightLocking extends LinearOpMode {
             }
             wasAtTargetRPM = allAtTarget && anyEnabled;
 
-            // ---------- DRIVING CONTROL WITH POSE-BASED AUTO-CENTERING ----------
-            double y = -gamepad1.left_stick_y;
-            double x = -gamepad1.left_stick_x;
-            double rx = -gamepad1.right_stick_x;
+            // ---------- APRIL TAG CENTERING ----------
+            boolean centeringActive =
+                    gamepad1.right_trigger > RobotConstants.TRIGGER_THRESHOLD;
 
-            if (centeringGamepad1) {
-                // NEW: Use pose-based auto-centering (works WITHOUT vision!)
-                if (!autoCentering.isActive()) {
-                    autoCentering.startCentering();
-                }
-
-                // Get rotation correction from auto-centering
-                double rotateCorrection = autoCentering.getRotationCorrection();
-
-                // Use the rotation override method
-                drivebase.updateDriveWithRotationOverride(y, x, rotateCorrection);
-
+            if (centeringActive) {
+                // Auto-drive handled internally by AprilTagCentering
+                aprilTagCentering.update(true, dt);
             } else {
-                // Stop auto-centering when trigger released
-                if (autoCentering.isActive()) {
-                    autoCentering.stopCentering();
-                }
+                aprilTagCentering.update(false, dt);
 
-                // Normal driving
-                drivebase.updateDrive(y, x, rx, false);
+                double y = -gamepad1.left_stick_y;
+                double x = -gamepad1.left_stick_x;
+                double rx = -gamepad1.right_stick_x;
+                drivebase.updateDrive(y, x, rx, true);
             }
 
             // ---------- RESET HEADING ----------
             if (gamepad1.x) {
                 drivebase.resetHeading();
+                aprilTagCentering.resetHeading();
             }
 
             // ---------- TELEMETRY ----------
-            telemetryHelper.displayAll(sorterControls, drivebase, shooter, interpolation,
-                    limelight, centeringGamepad1,
-                    rightTarget, middleTarget, leftTarget);
-
-            // NEW: Add pose estimation telemetry
-            telemetry.addLine("\n=== POSE ESTIMATION ===");
-            telemetry.addData("Robot X", "%.1f in", poseEstimator.getX());
-            telemetry.addData("Robot Y", "%.1f in", poseEstimator.getY());
-            telemetry.addData("Robot Heading", "%.1f°", poseEstimator.getHeadingDegrees());
-            telemetry.addData("Vision Trusted", poseEstimator.isVisionTrusted() ? "YES" : "NO");
-            telemetry.addData("Last Seen Tag", poseEstimator.getLastSeenTagId());
-
-            if (autoCentering.isActive()) {
-                telemetry.addLine("\n=== AUTO-CENTERING ===");
-                telemetry.addData("Target Goal", autoCentering.getTargetGoalId() == 20 ? "RED (20)" : "BLUE (24)");
-                telemetry.addData("Distance to Goal", "%.1f in", autoCentering.getDistanceToGoal());
-                telemetry.addData("Heading Error", "%.1f°", autoCentering.getHeadingErrorDegrees());
-                telemetry.addData("Rotation Correction", "%.3f", autoCentering.getRotationCorrection());
-                telemetry.addData("Centered", autoCentering.isCentered() ? "YES" : "NO");
-            }
-
-            telemetry.update();
+            /*telemetryHelper.displayAll(
+                    sorterControls, drivebase, shooter,
+                    interpolation, AprilTagCentering, aprilTagCentering,
+                    centeringActive, rightTarget, middleTarget, leftTarget
+            ); */
         }
     }
 }

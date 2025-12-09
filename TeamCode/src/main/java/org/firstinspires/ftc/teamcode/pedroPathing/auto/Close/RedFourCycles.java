@@ -4,10 +4,7 @@ import com.bylazar.configurables.annotations.Configurable;
 import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
-import com.pedropathing.geometry.BezierCurve;
-import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
-import com.pedropathing.paths.PathChain;
 import com.qualcomm.hardware.rev.RevColorSensorV3;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -16,37 +13,31 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.util.Range;
-import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
-import org.firstinspires.ftc.teamcode.pedroPathing.auto.Paths.RedFourCyclesPaths.Paths;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
+import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.pedroPathing.auto.AutoConstants.BlueFourCyclesConstants;
+import org.firstinspires.ftc.teamcode.pedroPathing.auto.Paths.RedFourCyclesPaths;
+import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.StopRobot;
+import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.UpdateShooters;
+import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.UpdateSorter;
+import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.StartShootingSequence;
 
 @Autonomous(name = "Red Close Four Cycles", group = "Autonomous")
 @Configurable
 public class RedFourCycles extends OpMode {
 
-    // -----------------------------------------------------------------------
-    // Shooter PIDF constants (matching TeleOp)
-    // -----------------------------------------------------------------------
-    private static final double SHOOTER_KP = 0.0002;
-    private static final double SHOOTER_KI = 0.0;
-    private static final double SHOOTER_KD = 0.0001;
-    private static final double SHOOTER_KF = 0.0004;
-    private static final double TARGET_RPM = 3000.0;
-    private static final double RPM_THRESHOLD = 2800.0; // Lower servos when within 100 RPM
-
-    private static final double TICKS_PER_REV = 28.0;
-    private static final int SIDE_DETECT_THRESHOLD = 100;
-
-    private static final double SERVO_MAX = 1.0; // up
-    private static final double SERVO_MIN = 0.0; // down during shooting
-
     private TelemetryManager panelsTelemetry;
-    public Follower follower;
-    private int pathState;
-    private Paths paths;
+    private Follower follower;
+    private RedFourCyclesPaths.Paths paths;
+    private int pathState = 0;
+    private boolean pathStarted = false;
 
-    // Hardware
+    // Pause timers
+    private boolean isPausing = false;
+    private double pauseStartTime = 0.0;
+    private double pauseDuration = 0.0;
+
     private DcMotor intake;
     private DcMotorEx rightShooter;
     private DcMotorEx middleShooter;
@@ -55,53 +46,33 @@ public class RedFourCycles extends OpMode {
     private Servo leftServo;
     private Servo middleServo;
     private Servo rightServo;
+    private Servo leftPushServo;
+    private Servo rightPushServo;
 
     private CRServo sorterServo;
     private CRServo sorterServo2;
+
     private RevColorSensorV3 leftColor;
     private RevColorSensorV3 rightColor;
 
-    // PID state for each shooter
-    private double right_integral = 0.0;
-    private double right_lastError = 0.0;
-    private double middle_integral = 0.0;
-    private double middle_lastError = 0.0;
-    private double left_integral = 0.0;
-    private double left_lastError = 0.0;
+    private UpdateShooters shooterSubsystem;
+    private UpdateSorter sorterSubsystem;
+    private StartShootingSequence shootingSequence;
+    private StopRobot stopRobotSubsystem;
 
-    private boolean waiting = false;
-    private double waitStartTime = 0;
-    private boolean pathStarted = false;
-    private boolean shootersAtSpeed = false;
     private double lastLoopTime = 0.0;
-
-    // Staggered shooter startup
-    private boolean shootersStarting = false;
-    private double shooterStartTime = 0;
-    private static final double SHOOTER_START_DELAY = 0.05; // 50ms delay between each shooter
-
-    // Individual shooter ready states (THESE WERE NEVER SET BEFORE → BUG)
-    private boolean rightShooterReady = false;
-    private boolean middleShooterReady = false;
-    private boolean leftShooterReady = false;
-
-    // Failsafe timeout
-    private static final double SHOOTER_TIMEOUT = 4.0; // 4 seconds to reach speed or move on
 
     @Override
     public void init() {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
 
         follower = Constants.createFollower(hardwareMap);
-        follower.setStartingPose(new Pose(123.4, 122.4, Math.toRadians(-143)));
+        follower.setStartingPose(new Pose(21, 21, Math.toRadians(216)));
+        paths = new RedFourCyclesPaths.Paths(follower);
 
-        paths = new Paths(follower);
-
-        // ---------- INTAKE ----------
         intake = hardwareMap.get(DcMotor.class, "intake");
         intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        // ---------- SHOOTER MOTORS ----------
         rightShooter = hardwareMap.get(DcMotorEx.class, "rightShooter");
         middleShooter = hardwareMap.get(DcMotorEx.class, "middleShooter");
         leftShooter = hardwareMap.get(DcMotorEx.class, "leftShooter");
@@ -118,29 +89,49 @@ public class RedFourCycles extends OpMode {
         middleShooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         leftShooter.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
-        // ---------- SERVOS ----------
         leftServo = hardwareMap.get(Servo.class, "leftServo");
         middleServo = hardwareMap.get(Servo.class, "middleServo");
         rightServo = hardwareMap.get(Servo.class, "rightServo");
+        leftPushServo = hardwareMap.get(Servo.class, "leftPushServo");
+        rightPushServo = hardwareMap.get(Servo.class, "rightPushServo");
 
-        leftServo.setPosition(SERVO_MAX);
-        middleServo.setPosition(SERVO_MAX);
-        rightServo.setPosition(SERVO_MAX);
+        rightPushServo.setDirection(Servo.Direction.REVERSE);
 
-        // ---------- SORTER + COLOR SENSORS ----------
+        leftServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+        middleServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+        rightServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+        leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+        rightPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+
         sorterServo = hardwareMap.get(CRServo.class, "sorterServo");
         sorterServo2 = hardwareMap.get(CRServo.class, "sorterServo2");
         leftColor = hardwareMap.get(RevColorSensorV3.class, "leftColor");
         rightColor = hardwareMap.get(RevColorSensorV3.class, "rightColor");
 
+        shooterSubsystem = new UpdateShooters(rightShooter, middleShooter, leftShooter);
+        sorterSubsystem = new UpdateSorter(sorterServo, sorterServo2, leftColor, rightColor);
+        shootingSequence = new StartShootingSequence(
+                shooterSubsystem,
+                leftServo, middleServo, rightServo,
+                leftPushServo, rightPushServo,
+                sorterServo, sorterServo2,
+                leftColor
+        );
+
+        stopRobotSubsystem = new StopRobot(
+                follower,
+                intake,
+                rightShooter, middleShooter, leftShooter,
+                sorterServo, sorterServo2,
+                leftServo, middleServo, rightServo,
+                leftPushServo, rightPushServo
+        );
+
         pathState = 0;
-        waiting = false;
         pathStarted = false;
-        shootersAtSpeed = false;
-        shootersStarting = false;
-        rightShooterReady = false;
-        middleShooterReady = false;
-        leftShooterReady = false;
+        isPausing = false;
+        pauseStartTime = 0.0;
+        pauseDuration = 0.0;
         lastLoopTime = 0.0;
 
         panelsTelemetry.debug("Status", "Initialized");
@@ -156,433 +147,189 @@ public class RedFourCycles extends OpMode {
     public void loop() {
         follower.update();
 
-        // Calculate dt for PID
         double now = getRuntime();
         double dt = now - lastLoopTime;
         if (dt <= 0) dt = 1e-6;
         lastLoopTime = now;
 
-        // Update shooter PIDF control
-        updateShooters(dt);
+        // Always update shooter PID
+        shooterSubsystem.updateShooters(dt, now);
+
+        // Update shooting sequence if active
+        if (shootingSequence.isWaiting()) {
+            boolean finished = shootingSequence.update(now);
+            if (finished) {
+                pathState++;
+                pathStarted = false;
+            }
+        }
+
+        // Handle pause timing
+        if (isPausing) {
+            if (now - pauseStartTime >= pauseDuration) {
+                isPausing = false;
+                pathState++;
+                pathStarted = false;
+            }
+        }
+
+        // Update sorter when not shooting or pausing
+        if (!shootingSequence.isWaiting() && !isPausing) {
+            sorterSubsystem.updateSorter();
+        }
 
         autonomousPathUpdate();
 
-        // Get current velocities for telemetry
-        double rightRPM = rightShooter.getVelocity() * 60.0 / TICKS_PER_REV;
-        double middleRPM = middleShooter.getVelocity() * 60.0 / TICKS_PER_REV;
-        double leftRPM = leftShooter.getVelocity() * 60.0 / TICKS_PER_REV;
+        // Telemetry
+        double rightRPM = rightShooter.getVelocity() * 60.0 / BlueFourCyclesConstants.TICKS_PER_REV;
+        double middleRPM = middleShooter.getVelocity() * 60.0 / BlueFourCyclesConstants.TICKS_PER_REV;
+        double leftRPM = leftShooter.getVelocity() * 60.0 / BlueFourCyclesConstants.TICKS_PER_REV;
 
         panelsTelemetry.debug("Path State", pathState);
-        panelsTelemetry.debug("Waiting", waiting);
-        panelsTelemetry.debug("Shooters At Speed", shootersAtSpeed);
-        panelsTelemetry.debug("Follower isBusy", follower.isBusy());
+        panelsTelemetry.debug("Pausing", isPausing);
+        panelsTelemetry.debug("Waiting (shooting)", shootingSequence.isWaiting());
+        panelsTelemetry.debug("Shooters at speed", shooterSubsystem.shootersAtSpeed);
         panelsTelemetry.debug("Shooter RPMs (R/M/L)", String.format("%.0f / %.0f / %.0f", rightRPM, middleRPM, leftRPM));
+        panelsTelemetry.debug("Left Color Green", leftColor.green());
+        panelsTelemetry.debug("Follower isBusy", follower.isBusy());
         panelsTelemetry.debug("X", follower.getPose().getX());
         panelsTelemetry.debug("Y", follower.getPose().getY());
         panelsTelemetry.debug("Heading°", Math.toDegrees(follower.getPose().getHeading()));
         panelsTelemetry.update(telemetry);
     }
 
-    private void updateShooters(double dt) {
-        // Handle staggered startup to prevent voltage drop
-        if (shootersStarting) {
-            double elapsedStartTime = getRuntime() - shooterStartTime;
-
-            // Start right shooter immediately
-            if (elapsedStartTime >= 0) {
-                double rightTicksPerSec = rightShooter.getVelocity();
-                double rightRPM = rightTicksPerSec * 60.0 / TICKS_PER_REV;
-
-                double rightError = TARGET_RPM - rightRPM;
-                right_integral += rightError * dt;
-                double rightDerivative = (rightError - right_lastError) / dt;
-                right_lastError = rightError;
-
-                double rightP = SHOOTER_KP * rightError;
-                double rightI = SHOOTER_KI * right_integral;
-                double rightD = SHOOTER_KD * rightDerivative;
-                double rightF = SHOOTER_KF * TARGET_RPM;
-                double rightPower = Range.clip(rightP + rightI + rightD + rightF, 0.0, 1.0);
-                rightShooter.setPower(rightPower);
-            }
-
-            // Start middle shooter after delay
-            if (elapsedStartTime >= SHOOTER_START_DELAY) {
-                double middleTicksPerSec = middleShooter.getVelocity();
-                double middleRPM = middleTicksPerSec * 60.0 / TICKS_PER_REV;
-
-                double middleError = TARGET_RPM - middleRPM;
-                middle_integral += middleError * dt;
-                double middleDerivative = (middleError - middle_lastError) / dt;
-                middle_lastError = middleError;
-
-                double middleP = SHOOTER_KP * middleError;
-                double middleI = SHOOTER_KI * middle_integral;
-                double middleD = SHOOTER_KD * middleDerivative;
-                double middleF = SHOOTER_KF * TARGET_RPM;
-                double middlePower = Range.clip(middleP + middleI + middleD + middleF, 0.0, 1.0);
-                middleShooter.setPower(middlePower);
-            }
-
-            // Start left shooter after 2x delay
-            if (elapsedStartTime >= SHOOTER_START_DELAY * 2) {
-                double leftTicksPerSec = leftShooter.getVelocity();
-                double leftRPM = leftTicksPerSec * 60.0 / TICKS_PER_REV;
-
-                double leftError = TARGET_RPM - leftRPM;
-                left_integral += leftError * dt;
-                double leftDerivative = (leftError - left_lastError) / dt;
-                left_lastError = leftError;
-
-                double leftP = SHOOTER_KP * leftError;
-                double leftI = SHOOTER_KI * left_integral;
-                double leftD = SHOOTER_KD * leftDerivative;
-                double leftF = SHOOTER_KF * TARGET_RPM;
-                double leftPower = Range.clip(leftP + leftI + leftD + leftF, 0.0, 1.0);
-                leftShooter.setPower(leftPower);
-
-                // After all shooters have started, switch to normal mode
-                shootersStarting = false;
-            }
-            return;
-        }
-
-        // Normal PIDF control for all shooters (after staggered startup)
-        // Get current velocities
-        double rightTicksPerSec = rightShooter.getVelocity();
-        double middleTicksPerSec = middleShooter.getVelocity();
-        double leftTicksPerSec = leftShooter.getVelocity();
-
-        double rightRPM = rightTicksPerSec * 60.0 / TICKS_PER_REV;
-        double middleRPM = middleTicksPerSec * 60.0 / TICKS_PER_REV;
-        double leftRPM = leftTicksPerSec * 60.0 / TICKS_PER_REV;
-
-        // FIXED: Actually update individual ready flags
-        rightShooterReady = (rightRPM >= RPM_THRESHOLD);
-        middleShooterReady = (middleRPM >= RPM_THRESHOLD);
-        leftShooterReady = (leftRPM >= RPM_THRESHOLD);
-
-        // Check if all shooters are at speed
-        shootersAtSpeed = rightShooterReady && middleShooterReady && leftShooterReady;
-
-        // RIGHT shooter PIDF
-        double rightError = TARGET_RPM - rightRPM;
-        right_integral += rightError * dt;
-        double rightDerivative = (rightError - right_lastError) / dt;
-        right_lastError = rightError;
-
-        double rightP = SHOOTER_KP * rightError;
-        double rightI = SHOOTER_KI * right_integral;
-        double rightD = SHOOTER_KD * rightDerivative;
-        double rightF = SHOOTER_KF * TARGET_RPM;
-        double rightPower = Range.clip(rightP + rightI + rightD + rightF, 0.0, 1.0);
-
-        // MIDDLE shooter PIDF
-        double middleError = TARGET_RPM - middleRPM;
-        middle_integral += middleError * dt;
-        double middleDerivative = (middleError - middle_lastError) / dt;
-        middle_lastError = middleError;
-
-        double middleP = SHOOTER_KP * middleError;
-        double middleI = SHOOTER_KI * middle_integral;
-        double middleD = SHOOTER_KD * middleDerivative;
-        double middleF = SHOOTER_KF * TARGET_RPM;
-        double middlePower = Range.clip(middleP + middleI + middleD + middleF, 0.0, 1.0);
-
-        // LEFT shooter PIDF
-        double leftError = TARGET_RPM - leftRPM;
-        left_integral += leftError * dt;
-        double leftDerivative = (leftError - left_lastError) / dt;
-        left_lastError = leftError;
-
-        double leftP = SHOOTER_KP * leftError;
-        double leftI = SHOOTER_KI * left_integral;
-        double leftD = SHOOTER_KD * leftDerivative;
-        double leftF = SHOOTER_KF * TARGET_RPM;
-        double leftPower = Range.clip(leftP + leftI + leftD + leftF, 0.0, 1.0);
-
-        // Apply powers
-        rightShooter.setPower(rightPower);
-        middleShooter.setPower(middlePower);
-        leftShooter.setPower(leftPower);
-    }
-
-    private void updateSorter() {
-        // Read color sensors
-        int lR = leftColor.red();
-        int lG = leftColor.green();
-        int lB = leftColor.blue();
-
-        int rR = rightColor.red();
-        int rG = rightColor.green();
-        int rB = rightColor.blue();
-
-        boolean leftOccupied = (lR > SIDE_DETECT_THRESHOLD) ||
-                (lG > SIDE_DETECT_THRESHOLD) ||
-                (lB > SIDE_DETECT_THRESHOLD);
-        boolean rightOccupied = (rR > SIDE_DETECT_THRESHOLD) ||
-                (rG > SIDE_DETECT_THRESHOLD) ||
-                (rB > SIDE_DETECT_THRESHOLD);
-
-        // Sorting logic (same as TeleOp)
-        if (leftOccupied && rightOccupied) {
-            sorterServo.setPower(0.0);
-            sorterServo2.setPower(0.0);
-        } else if (rightOccupied && !leftOccupied) {
-            sorterServo.setPower(-1.0);
-            sorterServo2.setPower(-1.0);// push to left
-        } else if (leftOccupied && !rightOccupied) {
-            sorterServo.setPower(1.0);
-            sorterServo2.setPower(1.0);// push to right
-        } else {
-            sorterServo.setPower(1.0);
-            sorterServo2.setPower(1.0);// default to right
-        }
-    }
-
-
-    private void startShootingSequence() {
-        waitStartTime = getRuntime();
-        waiting = true;
-        pathStarted = false;
-        shootersAtSpeed = false;
-
-        // Reset PID integrators
-        right_integral = 0.0;
-        middle_integral = 0.0;
-        left_integral = 0.0;
-
-        // Initialize staggered shooter startup
-        shootersStarting = true;
-        shooterStartTime = getRuntime();
-
-        // Stop all shooters first to prepare for staggered startup
-        rightShooter.setPower(0);
-        middleShooter.setPower(0);
-        leftShooter.setPower(0);
-
-        // Servos stay up until shooters reach speed
-        leftServo.setPosition(SERVO_MAX);
-        middleServo.setPosition(SERVO_MAX);
-        rightServo.setPosition(SERVO_MAX);
-
-        // NOTE: Intake and sorter keep running from previous state
-        // They are NOT stopped or started here
-    }
-
-    private void startIntakeSequence() {
-        pathStarted = false;
-
-        // Intake forward with sorting
-        intake.setPower(1.0);
-        // Sorter will be updated in main loop
+    private void startPause(double duration) {
+        isPausing = true;
+        pauseStartTime = getRuntime();
+        pauseDuration = duration;
     }
 
     private void stopRobot() {
-        follower.setTeleOpDrive(0, 0, 0, true);
-        intake.setPower(0);
-        rightShooter.setPower(0);
-        middleShooter.setPower(0);
-        leftShooter.setPower(0);
-        sorterServo.setPower(0);
-
-        leftServo.setPosition(SERVO_MAX);
-        middleServo.setPosition(SERVO_MAX);
-        rightServo.setPosition(SERVO_MAX);
+        stopRobotSubsystem.stopAll();
     }
 
     public void autonomousPathUpdate() {
-        if (waiting) {
-            // During shooting sequence, wait for shooters to reach speed
-            // Keep intake and sorter running during entire shooting sequence
-
-            // Check for timeout failsafe
-            double shootingElapsed = getRuntime() - waitStartTime;
-            boolean timedOut = shootingElapsed >= SHOOTER_TIMEOUT;
-
-            // Lower each servo individually when its shooter reaches speed
-            if (rightShooterReady) {
-                rightServo.setPosition(SERVO_MIN);
-            }
-            if (middleShooterReady) {
-                middleServo.setPosition(SERVO_MIN);
-            }
-            if (leftShooterReady) {
-                leftServo.setPosition(SERVO_MIN);
-            }
-
-            // CRITICAL: Keep intake running to push balls through
-            intake.setPower(1.0);
-
-            // Continue shooting once all shooters are ready OR timeout occurs
-            if (shootersAtSpeed || timedOut) {
-                // Wait additional time from when shooters reached speed (or timed out) for balls to shoot
-                if (shootingElapsed >= 3.0) {
-                    waiting = false;
-                    intake.setPower(0);
-                    sorterServo.setPower(0);
-                    sorterServo2.setPower(0);
-                    rightShooter.setPower(0);
-                    middleShooter.setPower(0);
-                    leftShooter.setPower(0);
-
-                    leftServo.setPosition(SERVO_MAX);
-                    middleServo.setPosition(SERVO_MAX);
-                    rightServo.setPosition(SERVO_MAX);
-
-                    pathState++;
-                }
-            }
+        if (shootingSequence.isWaiting() || isPausing) {
             return;
         }
-
-        if (pathState > 9) {
+        if (pathState > 10) {
             stopRobot();
             return;
         }
 
         switch (pathState) {
-
-            case 0:
+            case 0: // MOVE TO FIRST SHOT
                 if (!pathStarted) {
                     follower.followPath(paths.MovetoFirstShot);
                     pathStarted = true;
+                } else if (!follower.isBusy()) {
+                    // 1 second pause before shooting
+                    startPause(1.0);
                 }
-                else if (!follower.isBusy()) startShootingSequence();
                 break;
 
-            case 1:
+            case 1: // START FIRST SHOT (after pause)
                 if (!pathStarted) {
+                    shootingSequence.start(getRuntime());
+                    pathStarted = true;
+                }
+                break;
+
+            case 2: // MOVE TO FIRST PICKUP
+                if (!pathStarted) {
+                    follower.setMaxPower(0.75);
                     follower.followPath(paths.MovetoPickup);
                     pathStarted = true;
-                }
-                else if (!follower.isBusy()) {
-                    pathState++;
-                    pathStarted = false;
+                } else if (!follower.isBusy()) {
+                    // 0.5 second pause before intake path
+                    startPause(0.5);
                 }
                 break;
 
-            case 2:
+            case 3: // FIRST PICKUP (after pause)
                 if (!pathStarted) {
+                    follower.setMaxPower(0.46);  //was 0.42
                     follower.followPath(paths.Pickup);
+                    intake.setPower(0.650); //was 1
                     pathStarted = true;
-                    intake.setPower(1.0);   //maybe try a lower power to slow ball down
-                }
-                else if (!follower.isBusy()) {
-                    // Keep intake and sorter running, just advance to next path
+                } else if (!follower.isBusy()) {
+                    follower.setMaxPower(0.650);
                     pathState++;
                     pathStarted = false;
                 }
-                // Update sorter during intake
-                else {
-                    updateSorter();
-                }
                 break;
 
-            case 3:
+            case 4: // MOVE TO SECOND SHOT
                 if (!pathStarted) {
                     follower.followPath(paths.Movetosecondshot);
+                    intake.setPower(0.60);  //was 1
                     pathStarted = true;
-                    // Intake and sorter continue running from previous state
-                }
-                else if (!follower.isBusy()) {
-                    // Keep intake and sorter running during shooting sequence
-                    startShootingSequence();
-                }
-                // Continue updating sorter during this movement
-                else {
-                    updateSorter();
+                } else if (!follower.isBusy()) {
+                    // 1 second pause before second shot
+                    startPause(1.0);
                 }
                 break;
 
-            case 4:
+            case 5: // START SECOND SHOT (after pause)
+                if (!pathStarted) {
+                    intake.setPower(0);
+                    shootingSequence.start(getRuntime());
+                    pathStarted = true;
+                }
+                break;
+
+            case 6: // MOVE TO SECOND PICKUP
                 if (!pathStarted) {
                     follower.followPath(paths.MovetoPickUpTwo);
                     pathStarted = true;
-                }
-                else if (!follower.isBusy()) {
+                } else if (!follower.isBusy()) {
                     pathState++;
                     pathStarted = false;
                 }
                 break;
 
-            case 5:
+            case 7: // SECOND PICKUP
                 if (!pathStarted) {
+                    follower.setMaxPower(0.46);
                     follower.followPath(paths.PickUpTwo);
+                    intake.setPower(0.650);
                     pathStarted = true;
-                    intake.setPower(1.0);
-                }
-                else if (!follower.isBusy()) {
-                    // Keep intake and sorter running, just advance to next path
+                } else if (!follower.isBusy()) {
+                    follower.setMaxPower(1.0);
                     pathState++;
                     pathStarted = false;
                 }
-                // Update sorter during intake
-                else {
-                    updateSorter();
-                }
                 break;
 
-            case 6:
+            case 8: // MOVE TO THIRD SHOT
                 if (!pathStarted) {
                     follower.followPath(paths.MovetoShootThree);
+                    intake.setPower(1.0);
                     pathStarted = true;
-                    // Intake and sorter continue running from previous state
-                }
-                else if (!follower.isBusy()) {
-                    // Keep intake and sorter running during shooting sequence
-                    startShootingSequence();
-                }
-                // Continue updating sorter during this movement
-                else {
-                    updateSorter();
+                } else if (!follower.isBusy()) {
+                    // 1 second pause before third shot
+                    startPause(1.0);
                 }
                 break;
 
-            case 7:
+            case 9: // START THIRD SHOT (after pause)
+                if (!pathStarted) {
+                    intake.setPower(0);
+                    shootingSequence.start(getRuntime());
+                    pathStarted = true;
+                }
+                break;
+
+            case 10: // FINAL MOVE
                 if (!pathStarted) {
                     follower.followPath(paths.MovetoPickUpThree);
                     pathStarted = true;
-                }
-                else if (!follower.isBusy()) {
+                } else if (!follower.isBusy()) {
+                    shooterSubsystem.stopShooters();
                     pathState++;
                     pathStarted = false;
                 }
                 break;
-
-            case 8:
-                if (!pathStarted) {
-                    follower.followPath(paths.PickUpThree);
-                    pathStarted = true;
-                    intake.setPower(1.0);
-                }
-                else if (!follower.isBusy()) {
-                    // Keep intake and sorter running, just advance to next path
-                    pathState++;
-                    pathStarted = false;
-                }
-                // Update sorter during intake
-                else {
-                    updateSorter();
-                }
-                break;
-
-            /*case 9:
-                if (!pathStarted) {
-                    follower.followPath(paths.MovetoShootFour);
-                    pathStarted = true;
-                    // Intake and sorter continue running from previous state
-                }
-                else if (!follower.isBusy()) {
-                    // Keep intake and sorter running during final shooting sequence
-                    startShootingSequence();
-                }
-                // Continue updating sorter during this movement
-                else {
-                    updateSorter();
-                }
-                break;
-*/
         }
     }
 }

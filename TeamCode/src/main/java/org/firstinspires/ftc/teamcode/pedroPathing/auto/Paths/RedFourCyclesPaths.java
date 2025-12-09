@@ -1,15 +1,90 @@
 package org.firstinspires.ftc.teamcode.pedroPathing.auto.Paths;
 
+import com.bylazar.configurables.annotations.Configurable;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierCurve;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.PathChain;
 
+@Configurable
 public class RedFourCyclesPaths {
 
     public static class Paths {
 
+        // Poses (Mirrored)
+        public Pose moveToFirstShotStart = new Pose(21.0, 21.0);
+        public Pose moveToFirstShotEnd   = new Pose(48.093, 44.84);
+
+        public Pose moveToPickupStart    = new Pose(48.093, 44.84);
+        public Pose moveToPickupControl1 = new Pose(58.316, 51.81);
+        public Pose moveToPickupControl2 = new Pose(58.083, 62.498);
+        public Pose moveToPickupEnd      = new Pose(53.901, 60.407);
+
+        public Pose pickupStart = new Pose(53.901, 60.407);
+        public Pose pickupEnd   = new Pose(26.00, 60.407);
+
+        public Pose moveToSecondShotStart = new Pose(29.739, 60.407);
+        public Pose moveToSecondShotControl1 = new Pose(34.85, 50.649);
+        public Pose moveToSecondShotEnd   = new Pose(48.325, 49.719);
+
+        public Pose moveToPickUpTwoStart   = new Pose(48.325, 49.719);
+        public Pose moveToPickUpTwoControl1 = new Pose(58.316, 55.76);
+        public Pose moveToPickUpTwoControl2 = new Pose(71.094, 84.569);
+        public Pose moveToPickUpTwoEnd     = new Pose(55.295, 88.0);
+
+        public Pose pickUpTwoStart = new Pose(55.295, 88.0);
+        public Pose pickUpTwoEnd   = new Pose(22.00, 88.0);
+
+        public Pose moveToShootThreeStart = new Pose(32.759, 85.034);
+        public Pose moveToShootThreeControl1 = new Pose(45.77, 77.135);
+        public Pose moveToShootThreeEnd = new Pose(49.487, 46.234);
+
+        public Pose moveToPickUpThreeStart = new Pose(49.487, 46.234);
+        public Pose moveToPickUpThreeControl1 = new Pose(69.003, 69.932);
+        public Pose moveToPickUpThreeControl2 = new Pose(65.518, 108.964);
+        public Pose moveToPickUpThreeEnd = new Pose(57.386, 109.429);
+
+        public Pose pickUpThreeStart = new Pose(57.386, 109.429);
+        public Pose pickUpThreeEnd   = new Pose(29.042, 109.661);
+
+        public Pose moveToShootFourStart = new Pose(29.042, 109.661);
+        public Pose moveToShootFourControl1 = new Pose(10.223, 105.944);
+        public Pose moveToShootFourControl2 = new Pose(56.689, 73.417);
+        public Pose moveToShootFourEnd = new Pose(49.022, 46.699);
+
+        // Headings (Mirrored: 180 - original)
+        public double moveToFirstShotStartHeading = 216;
+        public double moveToFirstShotEndHeading   = 222;
+
+        public double moveToPickupStartHeading = 216;
+        public double moveToPickupEndHeading   = 0;
+
+        public double pickupStartHeading = 0;
+        public double pickupEndHeading   = 0;
+
+        public double moveToSecondShotStartHeading = 0;
+        public double moveToSecondShotEndHeading   = 225;
+
+        public double moveToPickUpTwoStartHeading = 0;
+        public double moveToPickUpTwoEndHeading   = 0;
+
+        public double pickUpTwoStartHeading = 0;
+        public double pickUpTwoEndHeading   = 0;
+
+        public double moveToShootThreeStartHeading = 0;
+        public double moveToShootThreeEndHeading   = 225;
+
+        public double moveToPickUpThreeStartHeading = 225;
+        public double moveToPickUpThreeEndHeading   = 0;
+
+        public double pickUpThreeStartHeading = 0;
+        public double pickUpThreeEndHeading   = 0;
+
+        public double moveToShootFourStartHeading = 0;
+        public double moveToShootFourEndHeading   = 225;
+
+        // Paths
         public PathChain MovetoFirstShot;
         public PathChain MovetoPickup;
         public PathChain Pickup;
@@ -22,114 +97,70 @@ public class RedFourCyclesPaths {
         public PathChain MovetoShootFour;
 
         public Paths(Follower follower) {
-            MovetoFirstShot = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierLine(new Pose(123.369, 122.393), new Pose(95.721, 95.442))
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(-143), Math.toRadians(-143))
+            buildPaths(follower);
+        }
+
+        public void buildPaths(Follower follower) {
+
+            MovetoFirstShot = follower.pathBuilder()
+                    .addPath(new BezierLine(moveToFirstShotStart, moveToFirstShotEnd))
+                    .setLinearHeadingInterpolation(Math.toRadians(moveToFirstShotStartHeading),
+                            Math.toRadians(moveToFirstShotEndHeading))
                     .build();
 
-            MovetoPickup = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(95.721, 95.442),
-                                    new Pose(94.792, 94.281),
-                                    new Pose(89.216, 83.361),
-                                    new Pose(101.297, 82.664)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(-143), Math.toRadians(0))
+            MovetoPickup = follower.pathBuilder()
+                    .addPath(new BezierCurve(moveToPickupStart, moveToPickupControl1, moveToPickupControl2, moveToPickupEnd))
+                    .setLinearHeadingInterpolation(Math.toRadians(moveToPickupStartHeading),
+                            Math.toRadians(moveToPickupEndHeading))
                     .build();
 
-            Pickup = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierLine(new Pose(101.297, 82.664), new Pose(115.470, 81.502))
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(0), Math.toRadians(0))
+            Pickup = follower.pathBuilder()
+                    .addPath(new BezierLine(pickupStart, pickupEnd))
+                    .setLinearHeadingInterpolation(Math.toRadians(pickupStartHeading),
+                            Math.toRadians(pickupEndHeading))
                     .build();
 
-            Movetosecondshot = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(115.470, 81.502),
-                                    new Pose(110.126, 94.048),
-                                    new Pose(94.792, 94.745)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(0), Math.toRadians(-143))
+            Movetosecondshot = follower.pathBuilder()
+                    .addPath(new BezierCurve(moveToSecondShotStart, moveToSecondShotControl1, moveToSecondShotEnd))
+                    .setLinearHeadingInterpolation(Math.toRadians(moveToSecondShotStartHeading),
+                            Math.toRadians(moveToSecondShotEndHeading))
                     .build();
 
-            MovetoPickUpTwo = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(94.792, 94.745),
-                                    new Pose(77.135, 74.300),
-                                    new Pose(74.347, 59.198),
-                                    new Pose(92.933, 58.966)
-                            )
-                    )
-                    .setTangentHeadingInterpolation()
+            MovetoPickUpTwo = follower.pathBuilder()
+                    .addPath(new BezierCurve(moveToPickUpTwoStart, moveToPickUpTwoControl1, moveToPickUpTwoControl2, moveToPickUpTwoEnd))
+                    .setLinearHeadingInterpolation(Math.toRadians(moveToPickUpTwoStartHeading),
+                            Math.toRadians(moveToPickUpTwoEndHeading))
                     .build();
 
-            PickUpTwo = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierLine(new Pose(92.933, 58.966), new Pose(110.823, 58.501))
-                    )
-                    .setTangentHeadingInterpolation()
+            PickUpTwo = follower.pathBuilder()
+                    .addPath(new BezierLine(pickUpTwoStart, pickUpTwoEnd))
+                    .setLinearHeadingInterpolation(Math.toRadians(pickUpTwoStartHeading),
+                            Math.toRadians(pickUpTwoEndHeading))
                     .build();
 
-            MovetoShootThree = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(110.823, 58.501),
-                                    new Pose(70.165, 64.774),
-                                    new Pose(95.024, 95.210)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(0), Math.toRadians(-143))
+            MovetoShootThree = follower.pathBuilder()
+                    .addPath(new BezierCurve(moveToShootThreeStart, moveToShootThreeControl1, moveToShootThreeEnd))
+                    .setLinearHeadingInterpolation(Math.toRadians(moveToShootThreeStartHeading),
+                            Math.toRadians(moveToShootThreeEndHeading))
                     .build();
 
-            MovetoPickUpThree = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(95.024, 95.210),
-                                    new Pose(82.943, 55.713),
-                                    new Pose(74.347, 36.197),
-                                    new Pose(89.913, 34.571)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(-143), Math.toRadians(0))
+            MovetoPickUpThree = follower.pathBuilder()
+                    .addPath(new BezierCurve(moveToPickUpThreeStart, moveToPickUpThreeControl1, moveToPickUpThreeControl2, moveToPickUpThreeEnd))
+                    .setLinearHeadingInterpolation(Math.toRadians(moveToPickUpThreeStartHeading),
+                            Math.toRadians(moveToPickUpThreeEndHeading))
                     .build();
 
-            PickUpThree = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierLine(new Pose(89.913, 34.571), new Pose(116.399, 33.874))
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(0), Math.toRadians(0))
+            PickUpThree = follower.pathBuilder()
+                    .addPath(new BezierLine(pickUpThreeStart, pickUpThreeEnd))
+                    .setLinearHeadingInterpolation(Math.toRadians(pickUpThreeStartHeading),
+                            Math.toRadians(pickUpThreeEndHeading))
                     .build();
 
-            MovetoShootFour = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(116.399, 33.874),
-                                    new Pose(134.753, 38.753),
-                                    new Pose(76.438, 72.674),
-                                    new Pose(94.792, 95.210)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(0), Math.toRadians(-143))
+            MovetoShootFour = follower.pathBuilder()
+                    .addPath(new BezierCurve(moveToShootFourStart, moveToShootFourControl1, moveToShootFourControl2, moveToShootFourEnd))
+                    .setLinearHeadingInterpolation(Math.toRadians(moveToShootFourStartHeading),
+                            Math.toRadians(moveToShootFourEndHeading))
                     .build();
         }
     }
-
 }

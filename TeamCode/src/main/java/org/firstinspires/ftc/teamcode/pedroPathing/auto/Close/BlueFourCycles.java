@@ -220,11 +220,12 @@ public class BlueFourCycles extends OpMode {
         switch (pathState) {
             case 0: // MOVE TO FIRST SHOT
                 if (!pathStarted) {
+                    follower.setMaxPower(2);
                     follower.followPath(paths.MovetoFirstShot);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
                     // 1 second pause before shooting
-                    startPause(1.0);
+                    startPause(0.50);
                 }
                 break;
 
@@ -237,7 +238,7 @@ public class BlueFourCycles extends OpMode {
 
             case 2: // MOVE TO FIRST PICKUP
                 if (!pathStarted) {
-                    follower.setMaxPower(0.75);
+                    follower.setMaxPower(2);
                     follower.followPath(paths.MovetoPickup);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
@@ -261,12 +262,13 @@ public class BlueFourCycles extends OpMode {
 
             case 4: // MOVE TO SECOND SHOT
                 if (!pathStarted) {
+                    follower.setMaxPower(2);
                     follower.followPath(paths.Movetosecondshot);
-                    intake.setPower(0.60);  //was 1
+                    intake.setPower(0.750);  //was 1
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
                     // 1 second pause before second shot
-                    startPause(1.0);
+                    startPause(0.50);
                 }
                 break;
 
@@ -308,7 +310,7 @@ public class BlueFourCycles extends OpMode {
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
                     // 1 second pause before third shot
-                    startPause(1.0);
+                    startPause(0.50);
                 }
                 break;
 

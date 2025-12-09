@@ -162,7 +162,7 @@ public class StartShootingSequence {
         // === PHASE 5: Wait for middle ball to reach left sensor ===
         if (transferringMiddleBall && !middleBallDetected) {
             int l = leftColor.green();
-            if (l > 100) {
+            if (l > 200) {
                 // Ball detected on left sensor
                 sorterServo.setPower(-1.0);
                 sorterServo2.setPower(-1.0);
