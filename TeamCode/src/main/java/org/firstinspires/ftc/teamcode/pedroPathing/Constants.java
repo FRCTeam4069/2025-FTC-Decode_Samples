@@ -13,8 +13,8 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 
 public class Constants {
     public static FollowerConstants followerConstants = new FollowerConstants()
-            .forwardZeroPowerAcceleration(-58)
-            .lateralZeroPowerAcceleration(-58.78)
+            .forwardZeroPowerAcceleration(-64)  //Was -58
+            .lateralZeroPowerAcceleration(-62)   //Was -58.78
             .mass(13.6); //13.6 kg is like 30 pounds
 
     public static ThreeWheelIMUConstants localizerConstants = new ThreeWheelIMUConstants()
@@ -45,8 +45,8 @@ public class Constants {
             .leftRearMotorDirection(DcMotorSimple.Direction.FORWARD)
             .rightFrontMotorDirection(DcMotorSimple.Direction.REVERSE)
             .rightRearMotorDirection(DcMotorSimple.Direction.REVERSE)
-            .xVelocity(68.8)
-            .yVelocity(52.5);
+            .xVelocity(62)    //was 68.8
+            .yVelocity(37); // was 52.5
 
     public static PathConstraints pathConstraints = new PathConstraints(0.99, 100, 1, 1);
 
