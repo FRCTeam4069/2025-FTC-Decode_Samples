@@ -35,7 +35,7 @@ public class UpdateShootersFar {
         shootersStarting = true;
         shooterStartTime = currentTime;
         rightShooterActive = true;
-        middleShooterActive = true;
+        middleShooterActive = false;
         leftShooterActive = true;
     }
 

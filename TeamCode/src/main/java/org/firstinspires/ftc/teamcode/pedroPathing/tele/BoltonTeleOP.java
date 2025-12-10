@@ -143,7 +143,7 @@ public class BoltonTeleOP extends LinearOpMode {
 
             if (interpolating) {
                 if (!interpolation.isInterpolationShooting()) {
-                    shooter.enableAllShooters();
+                    //shooter.enableAllShooters();
                     interpolation.startInterpolationSequence(
                             aprilTagCentering.getDistanceInches(),
                             aprilTagCentering.isTagVisible()

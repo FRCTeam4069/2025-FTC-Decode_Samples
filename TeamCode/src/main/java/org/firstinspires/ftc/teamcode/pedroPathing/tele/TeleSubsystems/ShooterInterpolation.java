@@ -9,28 +9,37 @@ public class ShooterInterpolation {
     private double interpolatedTargetRPM = 3250.0;
     private boolean servosLowered = false;
     private double servoLowerTime = 0.0;
+    private boolean rpmLocked = false; // Prevents RPM from changing mid-sequence
 
     /**
      * Starts interpolation shooting sequence
+     * Only samples distance once at the start of the sequence
      */
     public void startInterpolationSequence(double distanceInches, boolean hasAprilTag) {
-        isInterpolationShooting = true;
-        servosLowered = false;
+        // Only calculate RPM if we're starting fresh (not already shooting)
+        if (!isInterpolationShooting) {
+            isInterpolationShooting = true;
+            servosLowered = false;
+            rpmLocked = true;
 
-        if (hasAprilTag && distanceInches > 0) {
-            interpolatedTargetRPM = interpolateRPM(distanceInches) + RobotConstants.rpm_offset;
-        } else {
-            // No AprilTag in view - use default RPM
-            interpolatedTargetRPM = 3250.0;
+            if (hasAprilTag && distanceInches > 0) {
+                // Tag visible - use interpolated RPM
+                interpolatedTargetRPM = interpolateRPM(distanceInches) + RobotConstants.rpm_offset;
+            } else {
+                // No AprilTag in view - use default RPM
+                interpolatedTargetRPM = 3250.0;
+            }
         }
+        // If already shooting, RPM stays locked to initial value
     }
 
     /**
-     * Stops interpolation shooting sequence
+     * Stops interpolation shooting sequence and unlocks RPM
      */
     public void stopInterpolationSequence() {
         isInterpolationShooting = false;
         servosLowered = false;
+        rpmLocked = false;
     }
 
     /**
@@ -91,5 +100,9 @@ public class ShooterInterpolation {
 
     public boolean areServosLowered() {
         return servosLowered;
+    }
+
+    public boolean isRpmLocked() {
+        return rpmLocked;
     }
 }

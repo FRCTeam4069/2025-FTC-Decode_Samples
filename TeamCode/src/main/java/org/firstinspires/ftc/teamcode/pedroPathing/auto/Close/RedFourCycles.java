@@ -23,7 +23,7 @@ import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.UpdateShooter
 import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.UpdateSorter;
 import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.StartShootingSequence;
 
-@Autonomous(name = "Red Close Four Cycles", group = "Autonomous")
+@Autonomous(name = "Red Close Auto", group = "Autonomous")
 @Configurable
 public class RedFourCycles extends OpMode {
 
@@ -39,7 +39,7 @@ public class RedFourCycles extends OpMode {
     private double pauseDuration = 0.0;
 
     // Auto timeout
-    private static final double AUTO_TIMEOUT = 28.0;
+    private static final double AUTO_TIMEOUT = 29.0;
     private double autoStartTime = 0.0;
     private boolean timeoutTriggered = false;
 
@@ -244,9 +244,11 @@ public class RedFourCycles extends OpMode {
         }
 
         switch (pathState) {
-            case 0: // MOVE TO FIRST SHOT
+            case 0: // MOVE TO FIRST SHOT (and spin up shooters during movement)
                 if (!pathStarted) {
                     follower.followPath(paths.MovetoFirstShot);
+                    // Start spinning up shooters immediately
+                    shooterSubsystem.startSideShoostersOnly(getRuntime());
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
                     startPause(1.0);
@@ -255,7 +257,7 @@ public class RedFourCycles extends OpMode {
 
             case 1: // START FIRST SHOT (after pause)
                 if (!pathStarted) {
-                    shootingSequence.start(getRuntime());
+                    shootingSequence.startWithPreSpunShooters(getRuntime());
                     pathStarted = true;
                 }
                 break;

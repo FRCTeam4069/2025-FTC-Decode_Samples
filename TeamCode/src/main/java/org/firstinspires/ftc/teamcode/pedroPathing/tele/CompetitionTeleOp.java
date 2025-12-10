@@ -46,6 +46,11 @@ public class CompetitionTeleOp extends LinearOpMode {
     private boolean wasAtTargetRPM = false;
     private double lastLoopTime = 0.0;
 
+    // Intake timing
+    private boolean intakeDelayActive = false;
+    private double intakeDelayStartTime = 0; // change to
+    private static final double INTAKE_DELAY_DURATION = 1; // Half second
+
     @Override
     public void runOpMode() throws InterruptedException {
 
@@ -138,50 +143,7 @@ public class CompetitionTeleOp extends LinearOpMode {
 
             sorterControls.updateSorter(gamepad2.left_stick_x);
 
-            // ---------- INTERPOLATION SHOOTING ----------
-            boolean interpolating = gamepad2.right_trigger > RobotConstants.TRIGGER_THRESHOLD;
-
-            if (interpolating) {
-                if (!interpolation.isInterpolationShooting()) {
-                    shooter.enableAllShooters();
-                    interpolation.startInterpolationSequence(
-                            aprilTagCentering.getDistanceInches(),
-                            aprilTagCentering.isTagVisible()
-                    );
-                }
-                sorterControls.setIntakePower(1.0);
-
-                if (!interpolation.areServosLowered()) {
-                    blockerServos.setAllUp();
-                    pusherServos.setAllUp();
-                    double targetRPM = interpolation.getInterpolatedTargetRPM();
-                    if (shooter.areAllEnabledShootersAtTarget(
-                            targetRPM, targetRPM, targetRPM)) {
-                        interpolation.setServosLowered(now);
-                    }
-                } else {
-                    blockerServos.setAllDown();
-                    if (interpolation.shouldLowerPushServos(now)) {
-                        pusherServos.setAllDown();
-                    } else {
-                        pusherServos.setAllUp();
-                    }
-                }
-            } else {
-                interpolation.stopInterpolationSequence();
-                blockerServos.setAllUp();
-                pusherServos.setAllUp();
-
-                if (gamepad2.a) sorterControls.setIntakePower(1.0);
-                else if (gamepad2.b) sorterControls.setIntakePower(-1.0);
-                else sorterControls.setIntakePower(0.0);
-            }
-
-            // ---------- SHOOTER TOGGLES ----------
-            if (gamepad2.left_trigger > RobotConstants.TRIGGER_THRESHOLD) {
-                shooter.disableAllShooters();
-            }
-
+            // ---------- SHOOTER TOGGLES (D-PAD) ----------
             if (gamepad2.dpad_left && dpadLeftReady) {
                 shooter.setLeftShooterEnabled(!shooter.isLeftShooterEnabled());
                 dpadLeftReady = false;
@@ -199,6 +161,88 @@ public class CompetitionTeleOp extends LinearOpMode {
                 dpadUpReady = false;
             }
             if (!gamepad2.dpad_up) dpadUpReady = true;
+
+            // ---------- INTERPOLATION SHOOTING ----------
+            boolean interpolating = gamepad2.right_trigger > RobotConstants.TRIGGER_THRESHOLD;
+
+            if (interpolating) {
+                if (!interpolation.isInterpolationShooting()) {
+                    // Starting new sequence - sample distance once and enable all shooters
+                    interpolation.startInterpolationSequence(
+                            aprilTagCentering.getDistanceInches(),
+                            aprilTagCentering.isTagVisible()
+                    );
+                    // Enable all shooters (unless they were manually disabled via d-pad)
+                    // This auto-enables them on trigger press
+                    if (!shooter.isLeftShooterManuallyDisabled()) {
+                        shooter.setLeftShooterEnabled(true);
+                    }
+                    if (!shooter.isMiddleShooterManuallyDisabled()) {
+                        shooter.setMiddleShooterEnabled(true);
+                    }
+                    if (!shooter.isRightShooterManuallyDisabled()) {
+                        shooter.setRightShooterEnabled(true);
+                    }
+                }
+
+                // Handle intake delay logic
+                if (intakeDelayActive) {
+                    if (now - intakeDelayStartTime >= INTAKE_DELAY_DURATION) {
+                        // Stop intake after delay
+                        sorterControls.setIntakePower(0.0);
+                        intakeDelayActive = false;
+                    } else {
+                        // Keep running during delay
+                        sorterControls.setIntakePower(1.0);
+                    }
+                } else {
+                    // Not in delay, keep intake off
+                    sorterControls.setIntakePower(0.0);
+                }
+
+                if (!interpolation.areServosLowered()) {
+                    // Ramp up phase
+                    blockerServos.setAllUp();
+                    pusherServos.setAllUp();
+                    double targetRPM = interpolation.getInterpolatedTargetRPM();
+
+                    // Check if enabled shooters are at target
+                    if (shooter.areAllEnabledShootersAtTarget(
+                            targetRPM, targetRPM, targetRPM)) {
+                        interpolation.setServosLowered(now);
+                    }
+                } else {
+                    // Shooting phase
+                    blockerServos.setAllDown();
+                    if (interpolation.shouldLowerPushServos(now)) {
+                        pusherServos.setAllDown();
+
+                        // Start intake delay when push servos fire
+                        if (!intakeDelayActive) {
+                            intakeDelayActive = true;
+                            intakeDelayStartTime = now;
+                        }
+                    } else {
+                        pusherServos.setAllUp();
+                    }
+                }
+            } else {
+                // Not interpolating - reset everything
+                interpolation.stopInterpolationSequence();
+                blockerServos.setAllUp();
+                pusherServos.setAllUp();
+                intakeDelayActive = false;
+
+                // Manual intake control
+                if (gamepad2.a) sorterControls.setIntakePower(1.0);
+                else if (gamepad2.b) sorterControls.setIntakePower(-1.0);
+                else sorterControls.setIntakePower(0.0);
+            }
+
+            // ---------- DISABLE ALL SHOOTERS ----------
+            if (gamepad2.left_trigger > RobotConstants.TRIGGER_THRESHOLD) {
+                shooter.disableAllShooters();
+            }
 
             // ---------- SLOW MODE ----------
             if (gamepad1.right_bumper && rightBumperReady) {

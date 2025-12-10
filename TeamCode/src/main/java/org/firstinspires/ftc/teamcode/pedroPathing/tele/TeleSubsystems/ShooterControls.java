@@ -24,10 +24,15 @@ public class ShooterControls {
     private double left_integral = 0.0;
     private double left_lastError = 0.0;
 
-    // Enable flags
+    // Enable flags - these are set by trigger press
     private boolean rightShooterEnabled = false;
     private boolean middleShooterEnabled = false;
     private boolean leftShooterEnabled = false;
+
+    // Manual disable flags - these persist and are set by d-pad
+    private boolean rightShooterManuallyDisabled = false;
+    private boolean middleShooterManuallyDisabled = false;
+    private boolean leftShooterManuallyDisabled = false;
 
     public ShooterControls(DcMotorEx rightShooter, DcMotorEx middleShooter, DcMotorEx leftShooter) {
         this.rightShooter = rightShooter;
@@ -169,16 +174,29 @@ public class ShooterControls {
         return allAtTarget;
     }
 
-    /**
-     * Enables all shooters
-     */
-    public void enableAllShooters() {
-        rightShooterEnabled = true;
-        middleShooterEnabled = true;
-        leftShooterEnabled = true;
+    // Manual disable toggle methods (for d-pad)
+    public void toggleLeftShooterManualDisable() {
+        leftShooterManuallyDisabled = !leftShooterManuallyDisabled;
+        if (leftShooterManuallyDisabled) {
+            leftShooterEnabled = false; // Immediately disable if manually disabled
+        }
     }
 
-    // Enable/disable methods
+    public void toggleMiddleShooterManualDisable() {
+        middleShooterManuallyDisabled = !middleShooterManuallyDisabled;
+        if (middleShooterManuallyDisabled) {
+            middleShooterEnabled = false;
+        }
+    }
+
+    public void toggleRightShooterManualDisable() {
+        rightShooterManuallyDisabled = !rightShooterManuallyDisabled;
+        if (rightShooterManuallyDisabled) {
+            rightShooterEnabled = false;
+        }
+    }
+
+    // Enable/disable methods (for trigger control)
     public void setRightShooterEnabled(boolean enabled) {
         this.rightShooterEnabled = enabled;
     }
@@ -197,7 +215,7 @@ public class ShooterControls {
         leftShooterEnabled = false;
     }
 
-    // Getters
+    // Getters for enabled state
     public boolean isRightShooterEnabled() {
         return rightShooterEnabled;
     }
@@ -212,5 +230,18 @@ public class ShooterControls {
 
     public boolean isAnyShooterEnabled() {
         return leftShooterEnabled || middleShooterEnabled || rightShooterEnabled;
+    }
+
+    // Getters for manual disable state
+    public boolean isLeftShooterManuallyDisabled() {
+        return leftShooterManuallyDisabled;
+    }
+
+    public boolean isMiddleShooterManuallyDisabled() {
+        return middleShooterManuallyDisabled;
+    }
+
+    public boolean isRightShooterManuallyDisabled() {
+        return rightShooterManuallyDisabled;
     }
 }

@@ -23,7 +23,7 @@ import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.UpdateShooter
 import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.UpdateSorter;
 import org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems.StartShootingSequence;
 
-@Autonomous(name = "Blue Close Four Cycles", group = "Autonomous")
+@Autonomous(name = "Blue Close Auto", group = "Autonomous")
 @Configurable
 public class BlueFourCycles extends OpMode {
 
@@ -39,7 +39,7 @@ public class BlueFourCycles extends OpMode {
     private double pauseDuration = 0.0;
 
     // Auto timeout
-    private static final double AUTO_TIMEOUT = 28.0;
+    private static final double AUTO_TIMEOUT = 29.0;
     private double autoStartTime = 0.0;
     private boolean timeoutTriggered = false;
 
