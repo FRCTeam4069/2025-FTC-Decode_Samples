@@ -40,6 +40,11 @@ public class RedFarLeave extends OpMode {
     private double pauseStartTime = 0.0;
     private double pauseDuration = 0.0;
 
+    // Auto timeout
+    private static final double AUTO_TIMEOUT = 28.0;
+    private double autoStartTime = 0.0;
+    private boolean timeoutTriggered = false;
+
     private DcMotor intake;
     private DcMotorEx rightShooter;
     private DcMotorEx middleShooter;
@@ -139,6 +144,7 @@ public class RedFarLeave extends OpMode {
         pauseStartTime = 0.0;
         pauseDuration = 0.0;
         lastLoopTime = 0.0;
+        timeoutTriggered = false;
 
         panelsTelemetry.debug("Status", "Initialized");
         panelsTelemetry.update(telemetry);
@@ -147,6 +153,7 @@ public class RedFarLeave extends OpMode {
     @Override
     public void start() {
         lastLoopTime = getRuntime();
+        autoStartTime = getRuntime();
     }
 
     @Override
@@ -157,6 +164,23 @@ public class RedFarLeave extends OpMode {
         double dt = now - lastLoopTime;
         if (dt <= 0) dt = 1e-6;
         lastLoopTime = now;
+
+        // Check for timeout (28 seconds since start)
+        double elapsedTime = now - autoStartTime;
+        if (elapsedTime >= AUTO_TIMEOUT && !timeoutTriggered && pathState < 6) {
+            // Cancel any active shooting sequence or pause
+            shootingSequence.cancel();
+            isPausing = false;
+
+            // Stop intake and jump to final path
+            intake.setPower(0);
+            shooterSubsystem.stopShooters();
+
+            // Jump to final path state (Leave)
+            pathState = 6;
+            pathStarted = false;
+            timeoutTriggered = true;
+        }
 
         shooterSubsystem.updateShooters(dt, now);
 
@@ -186,6 +210,8 @@ public class RedFarLeave extends OpMode {
         double middleRPM = middleShooter.getVelocity() * 60.0 / BlueAutoFarConstants.TICKS_PER_REV;
         double leftRPM = leftShooter.getVelocity() * 60.0 / BlueAutoFarConstants.TICKS_PER_REV;
 
+        panelsTelemetry.debug("Auto Time", String.format("%.1f / %.1f", elapsedTime, AUTO_TIMEOUT));
+        panelsTelemetry.debug("Timeout Triggered", timeoutTriggered);
         panelsTelemetry.debug("Path State", pathState);
         panelsTelemetry.debug("Pausing", isPausing);
         panelsTelemetry.debug("Waiting (shooting)", shootingSequence.isWaiting());

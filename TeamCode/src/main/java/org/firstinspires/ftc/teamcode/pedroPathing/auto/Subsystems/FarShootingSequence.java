@@ -238,4 +238,9 @@ public class FarShootingSequence {
         leftPushServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
         rightPushServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
     }
+
+    public void cancel() {
+        // Emergency cancel for timeout - immediately stop everything
+        stop();
+    }
 }
