@@ -72,7 +72,7 @@ public class RedFourCycles extends OpMode {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
 
         follower = Constants.createFollower(hardwareMap);
-        follower.setStartingPose(new Pose(21, 21, Math.toRadians(36)));
+        follower.setStartingPose(new Pose(21, 21, Math.toRadians(54))); //was 36
         paths = new RedFourCyclesPaths.Paths(follower);
 
         intake = hardwareMap.get(DcMotor.class, "intake");

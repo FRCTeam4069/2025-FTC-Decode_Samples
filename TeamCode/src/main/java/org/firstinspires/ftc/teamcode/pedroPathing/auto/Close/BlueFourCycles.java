@@ -38,6 +38,11 @@ public class BlueFourCycles extends OpMode {
     private double pauseStartTime = 0.0;
     private double pauseDuration = 0.0;
 
+    // Auto timeout
+    private static final double AUTO_TIMEOUT = 28.0;
+    private double autoStartTime = 0.0;
+    private boolean timeoutTriggered = false;
+
     private DcMotor intake;
     private DcMotorEx rightShooter;
     private DcMotorEx middleShooter;
@@ -133,6 +138,7 @@ public class BlueFourCycles extends OpMode {
         pauseStartTime = 0.0;
         pauseDuration = 0.0;
         lastLoopTime = 0.0;
+        timeoutTriggered = false;
 
         panelsTelemetry.debug("Status", "Initialized");
         panelsTelemetry.update(telemetry);
@@ -141,6 +147,7 @@ public class BlueFourCycles extends OpMode {
     @Override
     public void start() {
         lastLoopTime = getRuntime();
+        autoStartTime = getRuntime();
     }
 
     @Override
@@ -151,6 +158,23 @@ public class BlueFourCycles extends OpMode {
         double dt = now - lastLoopTime;
         if (dt <= 0) dt = 1e-6;
         lastLoopTime = now;
+
+        // Check for timeout (28 seconds since start)
+        double elapsedTime = now - autoStartTime;
+        if (elapsedTime >= AUTO_TIMEOUT && !timeoutTriggered && pathState < 10) {
+            // Cancel any active shooting sequence or pause
+            shootingSequence.cancel();
+            isPausing = false;
+
+            // Stop intake and jump to final path
+            intake.setPower(0);
+            shooterSubsystem.stopShooters();
+
+            // Jump to final path state
+            pathState = 10;
+            pathStarted = false;
+            timeoutTriggered = true;
+        }
 
         // Always update shooter PID
         shooterSubsystem.updateShooters(dt, now);
@@ -185,6 +209,8 @@ public class BlueFourCycles extends OpMode {
         double middleRPM = middleShooter.getVelocity() * 60.0 / BlueFourCyclesConstants.TICKS_PER_REV;
         double leftRPM = leftShooter.getVelocity() * 60.0 / BlueFourCyclesConstants.TICKS_PER_REV;
 
+        panelsTelemetry.debug("Auto Time", String.format("%.1f / %.1f", elapsedTime, AUTO_TIMEOUT));
+        panelsTelemetry.debug("Timeout Triggered", timeoutTriggered);
         panelsTelemetry.debug("Path State", pathState);
         panelsTelemetry.debug("Pausing", isPausing);
         panelsTelemetry.debug("Waiting (shooting)", shootingSequence.isWaiting());
@@ -218,20 +244,22 @@ public class BlueFourCycles extends OpMode {
         }
 
         switch (pathState) {
-            case 0: // MOVE TO FIRST SHOT
+            case 0: // MOVE TO FIRST SHOT (and spin up shooters during movement)
                 if (!pathStarted) {
                     follower.setMaxPower(2);
                     follower.followPath(paths.MovetoFirstShot);
+                    // Start spinning up shooters immediately
+                    shooterSubsystem.startSideShoostersOnly(getRuntime());
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // 1 second pause before shooting
+                    // 0.5 second pause before shooting
                     startPause(0.50);
                 }
                 break;
 
             case 1: // START FIRST SHOT (after pause)
                 if (!pathStarted) {
-                    shootingSequence.start(getRuntime());
+                    shootingSequence.startWithPreSpunShooters(getRuntime());
                     pathStarted = true;
                 }
                 break;
@@ -267,7 +295,7 @@ public class BlueFourCycles extends OpMode {
                     intake.setPower(0.750);  //was 1
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // 1 second pause before second shot
+                    // 0.5 second pause before second shot
                     startPause(0.50);
                 }
                 break;
@@ -309,7 +337,7 @@ public class BlueFourCycles extends OpMode {
                     intake.setPower(1.0);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // 1 second pause before third shot
+                    // 0.5 second pause before third shot
                     startPause(0.50);
                 }
                 break;

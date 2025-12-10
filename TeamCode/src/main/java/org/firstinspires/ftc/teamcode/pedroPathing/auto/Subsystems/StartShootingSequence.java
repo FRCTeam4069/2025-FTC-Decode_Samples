@@ -23,10 +23,12 @@ public class StartShootingSequence {
     private double sideBallsPushServoFireTime = 0;
     private double sideBallsShotTime = 0;
 
-    // New: Track if shooters have reached speed
+    // Track if shooters have reached speed
     private boolean shootersReachedSpeed = false;
+    // Track if shooters were pre-spun (started before this sequence)
+    private boolean shootersPreSpun = false;
 
-    // New: Track middle ball transfer sequence
+    // Track middle ball transfer sequence
     private boolean leftPushServoRaised = false;
     private boolean transferringMiddleBall = false;
     private boolean middleBallDetected = false;
@@ -58,6 +60,15 @@ public class StartShootingSequence {
     }
 
     public void start(double currentTime) {
+        startInternal(currentTime, false);
+    }
+
+    // New method for when shooters are already spinning
+    public void startWithPreSpunShooters(double currentTime) {
+        startInternal(currentTime, true);
+    }
+
+    private void startInternal(double currentTime, boolean preSpun) {
         waitStartTime = currentTime;
         sideBallsBlockerDownTime = 0;
         sideBallsPushServoFireTime = 0;
@@ -67,6 +78,7 @@ public class StartShootingSequence {
         sideBallsPushServosFired = false;
         sideBallsShot = false;
         shootersReachedSpeed = false;
+        shootersPreSpun = preSpun;
         leftPushServoRaised = false;
         transferringMiddleBall = false;
         middleBallDetected = false;
@@ -76,8 +88,10 @@ public class StartShootingSequence {
         middleBallBlockerDownTime = 0;
         middleBallPushServoFireTime = 0;
 
-        // Start ONLY right and left shooters (not middle)
-        shooterSubsystem.startSideShoostersOnly(currentTime);
+        // Only start shooters if they weren't pre-spun
+        if (!preSpun) {
+            shooterSubsystem.startSideShoostersOnly(currentTime);
+        }
 
         // Ensure blocker servos are up (remember: leftServo is actually middle, middleServo is actually left)
         leftServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);  // Actually middle blocker
@@ -97,8 +111,8 @@ public class StartShootingSequence {
         double elapsed = currentTime - waitStartTime;
         boolean timedOut = elapsed >= BlueFourCyclesConstants.SHOOTER_TIMEOUT;
 
-        // === PHASE 1: Side shooters spin up ===
-        if ((shooterSubsystem.shootersAtSpeed || timedOut) && !shootersReachedSpeed) {
+        // === PHASE 1: Side shooters spin up (or skip if pre-spun) ===
+        if ((shooterSubsystem.shootersAtSpeed || timedOut || shootersPreSpun) && !shootersReachedSpeed) {
             shootersReachedSpeed = true;
         }
 
@@ -123,7 +137,6 @@ public class StartShootingSequence {
                 sideBallsPushServosFired = true;
             }
         }
-
 
         // === PHASE 3: Wait for side balls to shoot, then reset side servos ===
         if (sideBallsPushServosFired && !sideBallsShot) {
@@ -235,6 +248,7 @@ public class StartShootingSequence {
         sideBallsPushServosFired = false;
         sideBallsShot = false;
         shootersReachedSpeed = false;
+        shootersPreSpun = false;
         leftPushServoRaised = false;
         transferringMiddleBall = false;
         middleBallDetected = false;

@@ -54,35 +54,36 @@ public class RedFourCyclesPaths {
         public Pose moveToShootFourEnd = new Pose(49.022, 46.699);
 
         // Headings (Mirrored: 180 - original)
-        public double moveToFirstShotStartHeading = 216;
-        public double moveToFirstShotEndHeading   = 222;
+        public double moveToFirstShotStartHeading = 54;   // 180 - 216
+        public double moveToFirstShotEndHeading   = 54;   // 180 - 222
 
-        public double moveToPickupStartHeading = 216;
-        public double moveToPickupEndHeading   = 0;
+        public double moveToPickupStartHeading = -36;     // 180 - 216
+        public double moveToPickupEndHeading   = 180;     // 180 - 0
 
-        public double pickupStartHeading = 0;
-        public double pickupEndHeading   = 0;
+        public double pickupStartHeading = 180;           // 180 - 0
+        public double pickupEndHeading   = 180;           // 180 - 0
 
-        public double moveToSecondShotStartHeading = 0;
-        public double moveToSecondShotEndHeading   = 225;
+        public double moveToSecondShotStartHeading = 54; // 180 - 0
+        public double moveToSecondShotEndHeading   = 54; // 180 - 225
 
-        public double moveToPickUpTwoStartHeading = 0;
-        public double moveToPickUpTwoEndHeading   = 0;
+        public double moveToPickUpTwoStartHeading = 180;  // 180 - 0
+        public double moveToPickUpTwoEndHeading   = 180;  // 180 - 0
 
-        public double pickUpTwoStartHeading = 0;
-        public double pickUpTwoEndHeading   = 0;
+        public double pickUpTwoStartHeading = 180;        // 180 - 0
+        public double pickUpTwoEndHeading   = 180;        // 180 - 0
 
-        public double moveToShootThreeStartHeading = 0;
-        public double moveToShootThreeEndHeading   = 225;
+        public double moveToShootThreeStartHeading = 180; // 180 - 0
+        public double moveToShootThreeEndHeading   = -45; // 180 - 225
 
-        public double moveToPickUpThreeStartHeading = 225;
-        public double moveToPickUpThreeEndHeading   = 0;
+        public double moveToPickUpThreeStartHeading = -45; // 180 - 225
+        public double moveToPickUpThreeEndHeading   = 180; // 180 - 0
 
-        public double pickUpThreeStartHeading = 0;
-        public double pickUpThreeEndHeading   = 0;
+        public double pickUpThreeStartHeading = 180;      // 180 - 0
+        public double pickUpThreeEndHeading   = 180;      // 180 - 0
 
-        public double moveToShootFourStartHeading = 0;
-        public double moveToShootFourEndHeading   = 225;
+        public double moveToShootFourStartHeading = 180;  // 180 - 0
+        public double moveToShootFourEndHeading   = -45;  // 180 - 225
+
 
         // Paths
         public PathChain MovetoFirstShot;
