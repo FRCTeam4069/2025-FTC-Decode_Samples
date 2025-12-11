@@ -25,6 +25,8 @@ public class UpdateShootersFar {
     public boolean middleShooterReady = false;
     public boolean leftShooterReady = false;
 
+
+
     public UpdateShootersFar(DcMotorEx right, DcMotorEx middle, DcMotorEx left) {
         this.rightShooter = right;
         this.middleShooter = middle;

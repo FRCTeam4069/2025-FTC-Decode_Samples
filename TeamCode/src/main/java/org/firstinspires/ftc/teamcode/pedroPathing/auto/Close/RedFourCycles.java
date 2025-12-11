@@ -41,7 +41,7 @@ public class RedFourCycles extends OpMode {
     private double pauseDuration = 0.0;
 
     // Auto timeout
-    private static final double AUTO_TIMEOUT = 29.0;
+    private static final double AUTO_TIMEOUT = 28.67;
     private double autoStartTime = 0.0;
     private boolean timeoutTriggered = false;
 
@@ -317,9 +317,9 @@ public class RedFourCycles extends OpMode {
 
             case 3: // FIRST PICKUP (after pause)
                 if (!pathStarted) {
-                    follower.setMaxPower(0.70);
+                    follower.setMaxPower(0.670);
                     follower.followPath(paths.Pickup);
-                    intake.setPower(0.650);
+                    intake.setPower(0.80);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
                     follower.setMaxPower(1.0);

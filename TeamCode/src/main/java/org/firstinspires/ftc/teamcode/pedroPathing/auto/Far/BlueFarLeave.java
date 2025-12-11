@@ -80,7 +80,7 @@ public class BlueFarLeave extends OpMode {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
 
         follower = Constants.createFollower(hardwareMap);
-        follower.setStartingPose(new Pose(56, 8, Math.toRadians(90)));
+        follower.setStartingPose(new Pose(53.187, 9.058, Math.toRadians(90)));
 
         paths = new Paths(follower);
 
@@ -306,7 +306,7 @@ public class BlueFarLeave extends OpMode {
 
             case 2: // MOVE TO PICKUP
                 if (!pathStarted) {
-                    follower.setMaxPower(0.75);
+                    follower.setMaxPower(1);
                     follower.followPath(paths.MoveToPickUp);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
@@ -317,7 +317,7 @@ public class BlueFarLeave extends OpMode {
 
             case 3: // PICKUP (after pause)
                 if (!pathStarted) {
-                    follower.setMaxPower(0.4);
+                    follower.setMaxPower(0.75);
                     follower.followPath(paths.PickUp);
                     intake.setPower(0.650);
                     pathStarted = true;
@@ -377,52 +377,58 @@ public class BlueFarLeave extends OpMode {
                     .pathBuilder()
                     .addPath(
                             new BezierCurve(
-                                    new Pose(56.000, 8.000),
+                                    new Pose(53.187, 9.058),
                                     new Pose(58.083, 14.590),
-                                    new Pose(61.316, 16.723)
+                                    new Pose(63.000, 12.000)
                             )
                     )
-                    .setLinearHeadingInterpolation(Math.toRadians(90), Math.toRadians(-69))
+                    .setLinearHeadingInterpolation(Math.toRadians(90), Math.toRadians(-61))
                     .build();
 
             MoveToPickUp = follower
                     .pathBuilder()
                     .addPath(
                             new BezierCurve(
-                                    new Pose(61.316, 16.723),
+                                    new Pose(63.000, 12.000),
                                     new Pose(69.700, 23.884),
-                                    new Pose(26.245, 18.581)
+                                    new Pose(14.865, 19.045)
                             )
                     )
-                    .setLinearHeadingInterpolation(Math.toRadians(-69), Math.toRadians(-160))
+                    .setLinearHeadingInterpolation(Math.toRadians(-67), Math.toRadians(180))
                     .build();
 
             PickUp = follower
                     .pathBuilder()
                     .addPath(
-                            new BezierLine(new Pose(26.245, 18.581), new Pose(14.168, 11.613))
+                            new BezierCurve(
+                                    new Pose(14.865, 19.045),
+                                    new Pose(8.129, 13.239),
+                                    new Pose(17.187, 13.006),
+                                    new Pose(17.884, 13),
+                                    new Pose(9.290, 13)
+                            )
                     )
-                    .setLinearHeadingInterpolation(Math.toRadians(-160), Math.toRadians(-135))
+                    .setLinearHeadingInterpolation(Math.toRadians(180), Math.toRadians(180))
                     .build();
 
             MovetoFarShotTwo = follower
                     .pathBuilder()
                     .addPath(
                             new BezierCurve(
-                                    new Pose(14.168, 11.613),
+                                    new Pose(9.290, 4.645),
                                     new Pose(28.335, 21.135),
-                                    new Pose(61.316, 16.490)
+                                    new Pose(63.000, 12.000)
                             )
                     )
-                    .setLinearHeadingInterpolation(Math.toRadians(-135), Math.toRadians(-69))
+                    .setLinearHeadingInterpolation(Math.toRadians(180), Math.toRadians(-67))
                     .build();
 
             Leave = follower
                     .pathBuilder()
                     .addPath(
-                            new BezierLine(new Pose(61.316, 16.490), new Pose(57.000, 35.000))
+                            new BezierLine(new Pose(63.000, 12.000), new Pose(57.000, 35.000))
                     )
-                    .setLinearHeadingInterpolation(Math.toRadians(-69), Math.toRadians(180))
+                    .setLinearHeadingInterpolation(Math.toRadians(-67), Math.toRadians(180))
                     .build();
         }
     }

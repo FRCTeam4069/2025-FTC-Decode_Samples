@@ -29,10 +29,10 @@ public class RedFourCyclesPaths {
 
         public Pose moveToPickUpTwoStart   = new Pose(95.226, 99.174);
         public Pose moveToPickUpTwoControl1 = new Pose(85.006, 71.303);
-        public Pose moveToPickUpTwoEnd     = new Pose(96, 58);
+        public Pose moveToPickUpTwoEnd     = new Pose(96, 57.5);
 
-        public Pose pickUpTwoStart = new Pose(96, 58);
-        public Pose pickUpTwoEnd   = new Pose(122.865, 58);
+        public Pose pickUpTwoStart = new Pose(96, 57.5);
+        public Pose pickUpTwoEnd   = new Pose(122.865, 57.5);
 
         public Pose moveToShootThreeStart = new Pose(122.865, 58.529);
         public Pose moveToShootThreeControl1 = new Pose(108.929, 61.548);

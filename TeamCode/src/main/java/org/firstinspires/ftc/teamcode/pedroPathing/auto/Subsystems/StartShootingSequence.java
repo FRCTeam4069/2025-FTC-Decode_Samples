@@ -304,7 +304,7 @@ public class StartShootingSequence {
             }
 
             // Safety timeout for transfer
-            if (currentTime - transferStartTime >= 5.0) {
+            if (currentTime - transferStartTime >= 3) {
                 sorterServo.setPower(0);
                 sorterServo2.setPower(0);
                 middleBallDetected = true;
