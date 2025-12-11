@@ -11,7 +11,7 @@ import com.qualcomm.robotcore.hardware.Gamepad;
 /**
  * AprilTag centering using Limelight 3A.
  * ONLY rotates the robot to align the camera center with the AprilTag center.
- * Does NOT move forward/backward or strafe.
+ * Returns correction value to be added to manual drive inputs.
  */
 public class AprilTagCentering {
 
@@ -25,19 +25,20 @@ public class AprilTagCentering {
     private static final double METERS_TO_INCHES = 39.37007874;
 
     // PD constants for rotation only
-    private double kP_rotation = 0.0075;     // Rotational proportional gain
-    private double kD_rotation = 0.0005;     // Rotational derivative gain
+    private double kP_rotation = 0.05;   //0.0075  // Rotational proportional gain
+    private double kD_rotation = 0.005;     // Rotational derivative gain
 
     // Tolerance for "centered" detection (horizontal only)
     private double angleTolerance = 2.0;     // degrees (tx tolerance)
 
     // Maximum rotation power during centering
-    private double maxRotationPower = 0.4;
+    private double maxRotationPower = 0.666666666666;
 
     // State tracking
     private boolean wasCentered = false;
     private double lastErrorAngle = 0.0;
     private double imuOffset = 0.0;
+    private double currentCorrectionRotation = 0.0;
 
     // Distance tracking (for interpolation compatibility)
     private double lastDistanceInches = 0.0;
@@ -57,8 +58,9 @@ public class AprilTagCentering {
      * Update centering control - call this every loop
      * @param shouldCenter Whether centering is active (e.g. right trigger)
      * @param dt Delta time since last update (seconds) (for derivative calculations)
+     * @return The rotation correction to add to manual drive (0 if not centering)
      */
-    public void update(boolean shouldCenter, double dt) {
+    public double update(boolean shouldCenter, double dt) {
         // Always update distance and visibility regardless of centering mode
         updateDistanceTracking();
 
@@ -66,7 +68,8 @@ public class AprilTagCentering {
             // Reset state when not centering
             wasCentered = false;
             lastErrorAngle = 0.0;
-            return;
+            currentCorrectionRotation = 0.0;
+            return 0.0;
         }
 
         // Provide IMU yaw to Limelight for best 3D localization (degrees)
@@ -81,13 +84,14 @@ public class AprilTagCentering {
 
         // Check if we have a valid target
         if (result == null || !result.isValid()) {
-            // No target - stop moving
-            follower.setTeleOpDrive(0, 0, 0);
+            // No target - no correction
             wasCentered = false;
-            return;
+            currentCorrectionRotation = 0.0;
+            return 0.0;
         }
 
-        // Get horizontal offset (tx) - this is what we want to zero out
+        // CRITICAL: Use tx (2D horizontal offset) directly from Limelight
+        // This is the raw 2D crosshair offset, NOT derived from 3D pose
         // tx is in degrees: negative = target is left of crosshair, positive = target is right
         double tx = result.getTx();
         lastTx = tx;
@@ -109,8 +113,8 @@ public class AprilTagCentering {
         // Clamp to maximum rotation power
         correctionRotation = clamp(correctionRotation, -maxRotationPower, maxRotationPower);
 
-        // Send drive command: NO translation (y=0, x=0), ONLY rotation
-        follower.setTeleOpDrive(0, 0, correctionRotation);
+        // Store the correction for external use
+        currentCorrectionRotation = correctionRotation;
 
         // Check if centered within tolerance
         boolean isCentered = Math.abs(errorAngle) < angleTolerance;
@@ -125,10 +129,13 @@ public class AprilTagCentering {
 
         wasCentered = isCentered;
         lastErrorAngle = errorAngle;
+
+        return correctionRotation;
     }
 
     /**
      * Update distance tracking from Limelight data
+     * Uses 3D pose for distance calculation, but 2D tx for centering
      */
     private void updateDistanceTracking() {
         try {
@@ -136,10 +143,11 @@ public class AprilTagCentering {
             if (result != null && result.isValid()) {
                 lastTagVisible = true;
 
-                // Get tx for tracking
+                // Get tx for tracking (this is 2D data, always accurate)
                 lastTx = result.getTx();
 
-                // Try to get 3D pose for distance calculation
+                // Try to get 3D pose for distance calculation ONLY
+                // We use 3D pose for distance but 2D tx for centering
                 Pose3D botpose = null;
                 try {
                     botpose = result.getBotpose_MT2();
@@ -172,6 +180,13 @@ public class AprilTagCentering {
         } catch (Exception e) {
             lastTagVisible = false;
         }
+    }
+
+    /**
+     * Get the current rotation correction value
+     */
+    public double getCorrectionRotation() {
+        return currentCorrectionRotation;
     }
 
     /**

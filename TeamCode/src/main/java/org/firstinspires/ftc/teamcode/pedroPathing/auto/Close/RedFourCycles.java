@@ -5,6 +5,8 @@ import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.Pose;
+import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.hardware.rev.RevColorSensorV3;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -60,6 +62,10 @@ public class RedFourCycles extends OpMode {
     private RevColorSensorV3 leftColor;
     private RevColorSensorV3 rightColor;
 
+    // Limelight and IMU
+    private BNO055IMU imu;
+    private Limelight3A limelight;
+
     private UpdateShooters shooterSubsystem;
     private UpdateSorter sorterSubsystem;
     private StartShootingSequence shootingSequence;
@@ -72,7 +78,7 @@ public class RedFourCycles extends OpMode {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
 
         follower = Constants.createFollower(hardwareMap);
-        follower.setStartingPose(new Pose(21, 21, Math.toRadians(54))); //was 36
+        follower.setStartingPose(new Pose(126, 123, Math.toRadians(-143)));
         paths = new RedFourCyclesPaths.Paths(follower);
 
         intake = hardwareMap.get(DcMotor.class, "intake");
@@ -113,6 +119,17 @@ public class RedFourCycles extends OpMode {
         leftColor = hardwareMap.get(RevColorSensorV3.class, "leftColor");
         rightColor = hardwareMap.get(RevColorSensorV3.class, "rightColor");
 
+        // Initialize IMU
+        imu = hardwareMap.get(BNO055IMU.class, "imu");
+        BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
+        parameters.angleUnit = BNO055IMU.AngleUnit.RADIANS;
+        imu.initialize(parameters);
+
+        // Initialize Limelight
+        limelight = hardwareMap.get(Limelight3A.class, "Limelight");
+        limelight.pipelineSwitch(0); // Switch to your AprilTag pipeline
+        limelight.start(); // Start polling for data
+
         shooterSubsystem = new UpdateShooters(rightShooter, middleShooter, leftShooter);
         sorterSubsystem = new UpdateSorter(sorterServo, sorterServo2, leftColor, rightColor);
         shootingSequence = new StartShootingSequence(
@@ -120,7 +137,10 @@ public class RedFourCycles extends OpMode {
                 leftServo, middleServo, rightServo,
                 leftPushServo, rightPushServo,
                 sorterServo, sorterServo2,
-                leftColor
+                leftColor,
+                follower,
+                imu,
+                limelight
         );
 
         stopRobotSubsystem = new StopRobot(
@@ -161,19 +181,24 @@ public class RedFourCycles extends OpMode {
 
         // Check for timeout (28 seconds since start)
         double elapsedTime = now - autoStartTime;
-        if (elapsedTime >= AUTO_TIMEOUT && !timeoutTriggered && pathState < 10) {
+        if (elapsedTime >= 28.0 && !timeoutTriggered && pathState < 10) {
             // Cancel any active shooting sequence or pause
-            shootingSequence.cancel();
+            if (shootingSequence.isWaiting()) {
+                shootingSequence.cancel();
+            }
             isPausing = false;
 
-            // Stop intake and jump to final path
+            // Stop intake but DON'T stop shooters yet - let them coast down naturally
             intake.setPower(0);
-            shooterSubsystem.stopShooters();
 
-            // Jump to final path state
+            // Immediately start final path
             pathState = 10;
             pathStarted = false;
             timeoutTriggered = true;
+
+            // Force start the final path immediately
+            follower.followPath(paths.MovetoPickUpThree);
+            pathStarted = true;
         }
 
         // Always update shooter PID
@@ -214,6 +239,8 @@ public class RedFourCycles extends OpMode {
         panelsTelemetry.debug("Path State", pathState);
         panelsTelemetry.debug("Pausing", isPausing);
         panelsTelemetry.debug("Waiting (shooting)", shootingSequence.isWaiting());
+        panelsTelemetry.debug("Centering", shootingSequence.isCentering());
+        panelsTelemetry.debug("Centered", shootingSequence.isCentered());
         panelsTelemetry.debug("Shooters at speed", shooterSubsystem.shootersAtSpeed);
         panelsTelemetry.debug("Shooter RPMs (R/M/L)", String.format("%.0f / %.0f / %.0f", rightRPM, middleRPM, leftRPM));
         panelsTelemetry.debug("Left Color Green", leftColor.green());
@@ -235,6 +262,17 @@ public class RedFourCycles extends OpMode {
     }
 
     public void autonomousPathUpdate() {
+        // Don't process path updates if we've timed out and are executing the final path
+        if (timeoutTriggered && pathState == 10) {
+            // Just let the final path complete
+            if (!follower.isBusy()) {
+                shooterSubsystem.stopShooters();
+                pathState++;
+                pathStarted = false;
+            }
+            return;
+        }
+
         if (shootingSequence.isWaiting() || isPausing) {
             return;
         }
@@ -244,19 +282,22 @@ public class RedFourCycles extends OpMode {
         }
 
         switch (pathState) {
-            case 0: // MOVE TO FIRST SHOT (and spin up shooters during movement)
+            case 0: // MOVE TO FIRST SHOT (and spin up shooters during movement - NO CENTERING YET)
                 if (!pathStarted) {
                     follower.followPath(paths.MovetoFirstShot);
                     // Start spinning up shooters immediately
                     shooterSubsystem.startSideShoostersOnly(getRuntime());
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    startPause(1.0);
+                    // No pause - go straight to centering and shooting
+                    pathState++;
+                    pathStarted = false;
                 }
                 break;
 
-            case 1: // START FIRST SHOT (after pause)
+            case 1: // FIRST SHOT - CENTER AND SHOOT (shooters already pre-spun)
                 if (!pathStarted) {
+                    // Use pre-spun shooters and DO center this time
                     shootingSequence.startWithPreSpunShooters(getRuntime());
                     pathStarted = true;
                 }
@@ -264,22 +305,24 @@ public class RedFourCycles extends OpMode {
 
             case 2: // MOVE TO FIRST PICKUP
                 if (!pathStarted) {
-                    follower.setMaxPower(0.75);
+                    follower.setMaxPower(1.0);
                     follower.followPath(paths.MovetoPickup);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    startPause(0.5);
+                    // Advance to next state (previously commented out)
+                    pathState++;
+                    pathStarted = false;
                 }
                 break;
 
             case 3: // FIRST PICKUP (after pause)
                 if (!pathStarted) {
-                    follower.setMaxPower(0.46);
+                    follower.setMaxPower(0.70);
                     follower.followPath(paths.Pickup);
                     intake.setPower(0.650);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    follower.setMaxPower(0.650);
+                    follower.setMaxPower(1.0);
                     pathState++;
                     pathStarted = false;
                 }
@@ -287,15 +330,18 @@ public class RedFourCycles extends OpMode {
 
             case 4: // MOVE TO SECOND SHOT
                 if (!pathStarted) {
+                    follower.setMaxPower(1);
                     follower.followPath(paths.Movetosecondshot);
-                    intake.setPower(0.60);
+                    intake.setPower(0.65);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    startPause(1.0);
+                    // Advance to next state (previously commented out)
+                    pathState++;
+                    pathStarted = false;
                 }
                 break;
 
-            case 5: // START SECOND SHOT (after pause)
+            case 5: // START SECOND SHOT (after pause) - WITH LIMELIGHT CENTERING
                 if (!pathStarted) {
                     intake.setPower(0);
                     shootingSequence.start(getRuntime());
@@ -305,6 +351,7 @@ public class RedFourCycles extends OpMode {
 
             case 6: // MOVE TO SECOND PICKUP
                 if (!pathStarted) {
+                    follower.setMaxPower(1);
                     follower.followPath(paths.MovetoPickUpTwo);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
@@ -315,7 +362,7 @@ public class RedFourCycles extends OpMode {
 
             case 7: // SECOND PICKUP
                 if (!pathStarted) {
-                    follower.setMaxPower(0.46);
+                    follower.setMaxPower(0.75);
                     follower.followPath(paths.PickUpTwo);
                     intake.setPower(0.650);
                     pathStarted = true;
@@ -328,15 +375,18 @@ public class RedFourCycles extends OpMode {
 
             case 8: // MOVE TO THIRD SHOT
                 if (!pathStarted) {
+                    follower.setMaxPower(2);
                     follower.followPath(paths.MovetoShootThree);
                     intake.setPower(1.0);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    startPause(1.0);
+                    // Advance to next state (previously commented out)
+                    pathState++;
+                    pathStarted = false;
                 }
                 break;
 
-            case 9: // START THIRD SHOT (after pause)
+            case 9: // START THIRD SHOT (after pause) - WITH LIMELIGHT CENTERING
                 if (!pathStarted) {
                     intake.setPower(0);
                     shootingSequence.start(getRuntime());
@@ -346,6 +396,7 @@ public class RedFourCycles extends OpMode {
 
             case 10: // FINAL MOVE
                 if (!pathStarted) {
+                    follower.setMaxPower(2);
                     follower.followPath(paths.MovetoPickUpThree);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {

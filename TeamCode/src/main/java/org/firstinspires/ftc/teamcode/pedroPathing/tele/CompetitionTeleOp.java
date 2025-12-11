@@ -48,8 +48,8 @@ public class CompetitionTeleOp extends LinearOpMode {
 
     // Intake timing
     private boolean intakeDelayActive = false;
-    private double intakeDelayStartTime = 0; // change to
-    private static final double INTAKE_DELAY_DURATION = 1; // Half second
+    private double intakeDelayStartTime = 0;
+    private static final double INTAKE_DELAY_DURATION = 1; // One second
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -273,21 +273,22 @@ public class CompetitionTeleOp extends LinearOpMode {
             }
             wasAtTargetRPM = allAtTarget && anyEnabled;
 
-            // ---------- APRIL TAG CENTERING ----------
-            boolean centeringActive =
-                    gamepad1.right_trigger > RobotConstants.TRIGGER_THRESHOLD;
+            // ---------- APRIL TAG CENTERING + MANUAL DRIVE ----------
+            boolean centeringActive = gamepad1.right_trigger > RobotConstants.TRIGGER_THRESHOLD;
 
-            if (centeringActive) {
-                // Auto-drive handled internally by AprilTagCentering
-                aprilTagCentering.update(true, dt);
-            } else {
-                aprilTagCentering.update(false, dt);
+            // Get manual drive inputs
+            double y = -gamepad1.left_stick_y;
+            double x = -gamepad1.left_stick_x;
+            double rx = -gamepad1.right_stick_x;
 
-                double y = -gamepad1.left_stick_y;
-                double x = -gamepad1.left_stick_x;
-                double rx = -gamepad1.right_stick_x;
-                drivebase.updateDrive(y, x, rx, true);
-            }
+            // Get centering correction (returns 0 if not centering)
+            double centeringCorrection = aprilTagCentering.update(centeringActive, dt);
+
+            // Combine manual rotation with centering correction
+            double finalRotation = rx + centeringCorrection;
+
+            // Update drive with combined inputs
+            drivebase.updateDrive(y, x, finalRotation, true);
 
             // ---------- RESET HEADING ----------
             if (gamepad1.x) {

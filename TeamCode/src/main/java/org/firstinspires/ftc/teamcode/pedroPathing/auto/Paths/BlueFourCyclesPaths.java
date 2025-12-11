@@ -31,10 +31,10 @@ public class BlueFourCyclesPaths {
         public Pose moveToPickUpTwoStart   = new Pose(48.325, 94.281);
         public Pose moveToPickUpTwoControl1 = new Pose(58.316, 88.24);
         public Pose moveToPickUpTwoControl2 = new Pose(71.094, 59.431);
-        public Pose moveToPickUpTwoEnd     = new Pose(55.295, 56);
+        public Pose moveToPickUpTwoEnd     = new Pose(55.295, 56.5);
 
-        public Pose pickUpTwoStart = new Pose(55.295, 56);
-        public Pose pickUpTwoEnd   = new Pose(22.00, 56.00);
+        public Pose pickUpTwoStart = new Pose(55.295, 56.5);
+        public Pose pickUpTwoEnd   = new Pose(22.00, 56.5);
 
         public Pose moveToShootThreeStart = new Pose(32.759, 58.966);
         public Pose moveToShootThreeControl1 = new Pose(45.77, 66.865);
@@ -64,7 +64,7 @@ public class BlueFourCyclesPaths {
         public double pickupEndHeading   = 180;
 
         public double moveToSecondShotStartHeading = 180;
-        public double moveToSecondShotEndHeading   = -45;
+        public double moveToSecondShotEndHeading   = -42;
 
         public double moveToPickUpTwoStartHeading = 180;
         public double moveToPickUpTwoEndHeading   = 180;

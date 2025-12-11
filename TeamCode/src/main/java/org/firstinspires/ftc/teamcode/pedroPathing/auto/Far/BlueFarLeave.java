@@ -8,6 +8,8 @@ import com.pedropathing.geometry.BezierCurve;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.PathChain;
+import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.hardware.rev.RevColorSensorV3;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -61,6 +63,10 @@ public class BlueFarLeave extends OpMode {
 
     private RevColorSensorV3 leftColor;
     private RevColorSensorV3 rightColor;
+
+    // Limelight and IMU
+    private BNO055IMU imu;
+    private Limelight3A limelight;
 
     private UpdateShootersFar shooterSubsystem;
     private UpdateSorter sorterSubsystem;
@@ -116,6 +122,17 @@ public class BlueFarLeave extends OpMode {
         leftColor = hardwareMap.get(RevColorSensorV3.class, "leftColor");
         rightColor = hardwareMap.get(RevColorSensorV3.class, "rightColor");
 
+        // Initialize IMU
+        imu = hardwareMap.get(BNO055IMU.class, "imu");
+        BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
+        parameters.angleUnit = BNO055IMU.AngleUnit.RADIANS;
+        imu.initialize(parameters);
+
+        // Initialize Limelight with pipeline 1 (far shot pipeline)
+        limelight = hardwareMap.get(Limelight3A.class, "Limelight");
+        limelight.pipelineSwitch(1); // Switch to pipeline 1 for far shots
+        limelight.start(); // Start polling for data
+
         shooterSubsystem = new UpdateShootersFar(rightShooter, middleShooter, leftShooter);
         sorterSubsystem = new UpdateSorter(sorterServo, sorterServo2, leftColor, rightColor);
         shootingSequence = new FarShootingSequence(
@@ -123,7 +140,10 @@ public class BlueFarLeave extends OpMode {
                 leftServo, middleServo, rightServo,
                 leftPushServo, rightPushServo,
                 sorterServo, sorterServo2,
-                leftColor
+                leftColor,
+                follower,
+                imu,
+                limelight
         );
 
         stopRobotSubsystem = new StopRobot(
@@ -164,19 +184,24 @@ public class BlueFarLeave extends OpMode {
 
         // Check for timeout (28 seconds since start)
         double elapsedTime = now - autoStartTime;
-        if (elapsedTime >= AUTO_TIMEOUT && !timeoutTriggered && pathState < 6) {
+        if (elapsedTime >= 28.0 && !timeoutTriggered && pathState < 6) {
             // Cancel any active shooting sequence or pause
-            shootingSequence.cancel();
+            if (shootingSequence.isWaiting()) {
+                shootingSequence.cancel();
+            }
             isPausing = false;
 
-            // Stop intake and jump to final path
+            // Stop intake but DON'T stop shooters yet - let them coast down naturally
             intake.setPower(0);
-            shooterSubsystem.stopShooters();
 
-            // Jump to final path state (Leave)
+            // Immediately start final path (Leave)
             pathState = 6;
             pathStarted = false;
             timeoutTriggered = true;
+
+            // Force start the final path immediately
+            follower.followPath(paths.Leave);
+            pathStarted = true;
         }
 
         // Always update shooter PID
@@ -217,6 +242,8 @@ public class BlueFarLeave extends OpMode {
         panelsTelemetry.debug("Path State", pathState);
         panelsTelemetry.debug("Pausing", isPausing);
         panelsTelemetry.debug("Waiting (shooting)", shootingSequence.isWaiting());
+        panelsTelemetry.debug("Centering", shootingSequence.isCentering());
+        panelsTelemetry.debug("Centered", shootingSequence.isCentered());
         panelsTelemetry.debug("Shooter RPMs (R/M/L)", String.format("%.0f / %.0f / %.0f", rightRPM, middleRPM, leftRPM));
         panelsTelemetry.debug("Left Color Green", leftColor.green());
         panelsTelemetry.debug("Follower isBusy", follower.isBusy());
@@ -237,6 +264,18 @@ public class BlueFarLeave extends OpMode {
     }
 
     public void autonomousPathUpdate() {
+        // Don't process path updates if we've timed out and are executing the final path
+        if (timeoutTriggered && pathState == 6) {
+            // Just let the final path complete
+            if (!follower.isBusy()) {
+                shooterSubsystem.stopShooters();
+                intake.setPower(0);
+                pathState++;
+                pathStarted = false;
+            }
+            return;
+        }
+
         if (shootingSequence.isWaiting() || isPausing) {
             return;
         }
@@ -252,12 +291,13 @@ public class BlueFarLeave extends OpMode {
                     follower.followPath(paths.FarShot);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // 1 second pause before shooting
-                    startPause(1.0);
+                    // No pause - go straight to centering and shooting
+                    pathState++;
+                    pathStarted = false;
                 }
                 break;
 
-            case 1: // START FIRST SHOT (after pause) - shoots all 3 balls one at a time
+            case 1: // START FIRST SHOT - WITH LIMELIGHT CENTERING (shoots all 3 balls one at a time)
                 if (!pathStarted) {
                     shootingSequence.start(getRuntime());
                     pathStarted = true;
@@ -295,16 +335,17 @@ public class BlueFarLeave extends OpMode {
                     intake.setPower(0.60);
                     pathStarted = true;
                 } else if (!follower.isBusy()) {
-                    // 1 second pause before second shot
+                    // Stop intake before centering/shooting
                     intake.setPower(0.0);
-                    startPause(1.0);
+                    // No pause - go straight to centering and shooting
+                    pathState++;
+                    pathStarted = false;
                 }
                 break;
 
-            case 5: // START SECOND SHOT (after pause) - shoots all 3 balls one at a time
+            case 5: // START SECOND SHOT - WITH LIMELIGHT CENTERING (shoots all 3 balls one at a time)
                 if (!pathStarted) {
                     shootingSequence.start(getRuntime());
-                    intake.setPower(0.0);
                     pathStarted = true;
                 }
                 break;
@@ -322,6 +363,7 @@ public class BlueFarLeave extends OpMode {
                 break;
         }
     }
+
     public static class Paths {
 
         public PathChain FarShot;
@@ -340,7 +382,7 @@ public class BlueFarLeave extends OpMode {
                                     new Pose(61.316, 16.723)
                             )
                     )
-                    .setLinearHeadingInterpolation(Math.toRadians(90), Math.toRadians(-55))
+                    .setLinearHeadingInterpolation(Math.toRadians(90), Math.toRadians(-69))
                     .build();
 
             MoveToPickUp = follower
@@ -352,7 +394,7 @@ public class BlueFarLeave extends OpMode {
                                     new Pose(26.245, 18.581)
                             )
                     )
-                    .setLinearHeadingInterpolation(Math.toRadians(-55), Math.toRadians(-160))
+                    .setLinearHeadingInterpolation(Math.toRadians(-69), Math.toRadians(-160))
                     .build();
 
             PickUp = follower
@@ -372,7 +414,7 @@ public class BlueFarLeave extends OpMode {
                                     new Pose(61.316, 16.490)
                             )
                     )
-                    .setLinearHeadingInterpolation(Math.toRadians(-135), Math.toRadians(-55))
+                    .setLinearHeadingInterpolation(Math.toRadians(-135), Math.toRadians(-69))
                     .build();
 
             Leave = follower
@@ -380,7 +422,7 @@ public class BlueFarLeave extends OpMode {
                     .addPath(
                             new BezierLine(new Pose(61.316, 16.490), new Pose(57.000, 35.000))
                     )
-                    .setLinearHeadingInterpolation(Math.toRadians(-55), Math.toRadians(180))
+                    .setLinearHeadingInterpolation(Math.toRadians(-69), Math.toRadians(180))
                     .build();
         }
     }

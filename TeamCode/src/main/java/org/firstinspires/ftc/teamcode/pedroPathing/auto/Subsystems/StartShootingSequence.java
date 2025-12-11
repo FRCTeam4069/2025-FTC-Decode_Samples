@@ -1,8 +1,11 @@
 package org.firstinspires.ftc.teamcode.pedroPathing.auto.Subsystems;
 
+import com.pedropathing.follower.Follower;
+import com.qualcomm.hardware.bosch.BNO055IMU;
+import com.qualcomm.hardware.limelightvision.Limelight3A;
+import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.rev.RevColorSensorV3;
 import com.qualcomm.robotcore.hardware.CRServo;
-import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Servo;
 
 import org.firstinspires.ftc.teamcode.pedroPathing.auto.AutoConstants.BlueFourCyclesConstants;
@@ -13,6 +16,12 @@ public class StartShootingSequence {
     private Servo leftServo, middleServo, rightServo, leftPushServo, rightPushServo;
     private CRServo sorterServo, sorterServo2;
     private RevColorSensorV3 leftColor;
+
+    // Limelight centering
+    private Follower follower;
+    private BNO055IMU imu;
+    private Limelight3A limelight;
+    private double imuOffset = 0.0;
 
     private boolean waiting = false;
     private boolean sideBallsBlockersLowered = false;
@@ -27,6 +36,22 @@ public class StartShootingSequence {
     private boolean shootersReachedSpeed = false;
     // Track if shooters were pre-spun (started before this sequence)
     private boolean shootersPreSpun = false;
+
+    // Limelight centering phase
+    private boolean centeringStarted = false;
+    private boolean centeringComplete = false;
+    private double centeringStartTime = 0;
+    private double lastCenteringError = 0.0;
+
+    // Centering tuning
+    private static final double CENTERING_KP = 0.0075;
+    private static final double CENTERING_KD = 0.0005;
+    private static final double CENTERING_ANGLE_TOLERANCE = 2.0; // degrees
+    private static final double CENTERING_MAX_POWER = 0.4;
+    private static final double CENTERING_TIMEOUT = 2.0; // seconds
+    private static final double CENTERING_SETTLE_TIME = 0.15; // time to stay centered before proceeding
+    private double centeringSettleStartTime = 0;
+    private boolean centeringSettled = false;
 
     // Track middle ball transfer sequence
     private boolean leftPushServoRaised = false;
@@ -47,7 +72,10 @@ public class StartShootingSequence {
             Servo leftServo, Servo middleServo, Servo rightServo,
             Servo leftPushServo, Servo rightPushServo,
             CRServo sorterServo, CRServo sorterServo2,
-            RevColorSensorV3 leftColor) {
+            RevColorSensorV3 leftColor,
+            Follower follower,
+            BNO055IMU imu,
+            Limelight3A limelight) {
         this.shooterSubsystem = shooterSubsystem;
         this.leftServo = leftServo;
         this.middleServo = middleServo;
@@ -57,6 +85,16 @@ public class StartShootingSequence {
         this.sorterServo = sorterServo;
         this.sorterServo2 = sorterServo2;
         this.leftColor = leftColor;
+        this.follower = follower;
+        this.imu = imu;
+        this.limelight = limelight;
+
+        // Initialize IMU offset
+        try {
+            imuOffset = imu.getAngularOrientation().firstAngle;
+        } catch (Exception e) {
+            imuOffset = 0.0;
+        }
     }
 
     public void start(double currentTime) {
@@ -88,6 +126,14 @@ public class StartShootingSequence {
         middleBallBlockerDownTime = 0;
         middleBallPushServoFireTime = 0;
 
+        // Reset centering state
+        centeringStarted = false;
+        centeringComplete = false;
+        centeringStartTime = 0;
+        lastCenteringError = 0.0;
+        centeringSettled = false;
+        centeringSettleStartTime = 0;
+
         // Only start shooters if they weren't pre-spun
         if (!preSpun) {
             shooterSubsystem.startSideShoostersOnly(currentTime);
@@ -111,8 +157,82 @@ public class StartShootingSequence {
         double elapsed = currentTime - waitStartTime;
         boolean timedOut = elapsed >= BlueFourCyclesConstants.SHOOTER_TIMEOUT;
 
+        // === PHASE 0: Limelight centering (new phase) ===
+        if (!centeringStarted && !shootersReachedSpeed) {
+            centeringStarted = true;
+            centeringStartTime = currentTime;
+        }
+
+        if (centeringStarted && !centeringComplete) {
+            double centeringElapsed = currentTime - centeringStartTime;
+
+            // Update IMU orientation for limelight
+            double imuYawDegrees = getHeading();
+            try {
+                limelight.updateRobotOrientation(imuYawDegrees);
+            } catch (Exception ignored) {}
+
+            LLResult result = limelight.getLatestResult();
+
+            // Check for centering timeout
+            if (centeringElapsed >= CENTERING_TIMEOUT) {
+                // Timeout - stop centering and continue
+                follower.setTeleOpDrive(0, 0, 0);
+                centeringComplete = true;
+            }
+            // Check if we have a valid target
+            else if (result == null || !result.isValid()) {
+                // No target visible - timeout after 0.5 seconds
+                if (centeringElapsed >= 0.5) {
+                    follower.setTeleOpDrive(0, 0, 0);
+                    centeringComplete = true;
+                }
+            } else {
+                // Target visible - perform centering
+                double tx = result.getTx();
+                double errorAngle = tx;
+
+                // Calculate derivative
+                double dt = 0.02; // Approximate loop time
+                double derivAngle = (errorAngle - lastCenteringError) / dt;
+                lastCenteringError = errorAngle;
+
+                // PD control for rotation
+                double correctionRotation = -(CENTERING_KP * errorAngle + CENTERING_KD * derivAngle);
+                correctionRotation = clamp(correctionRotation, -CENTERING_MAX_POWER, CENTERING_MAX_POWER);
+
+                // Check if centered within tolerance
+                boolean isCentered = Math.abs(errorAngle) < CENTERING_ANGLE_TOLERANCE;
+
+                if (isCentered) {
+                    // Start settle timer if just reached center
+                    if (!centeringSettled) {
+                        centeringSettled = true;
+                        centeringSettleStartTime = currentTime;
+                    }
+
+                    // Check if we've been centered long enough
+                    if (currentTime - centeringSettleStartTime >= CENTERING_SETTLE_TIME) {
+                        // Successfully centered and settled
+                        follower.setTeleOpDrive(0, 0, 0);
+                        centeringComplete = true;
+                    } else {
+                        // Still settling - apply small correction
+                        follower.setTeleOpDrive(0, 0, correctionRotation * 0.5);
+                    }
+                } else {
+                    // Not centered - reset settle state and continue centering
+                    centeringSettled = false;
+                    follower.setTeleOpDrive(0, 0, correctionRotation);
+                }
+            }
+
+            // Don't proceed until centering is complete
+            return false;
+        }
+
         // === PHASE 1: Side shooters spin up (or skip if pre-spun) ===
-        if ((shooterSubsystem.shootersAtSpeed || timedOut || shootersPreSpun) && !shootersReachedSpeed) {
+        if (centeringComplete && ((shooterSubsystem.shootersAtSpeed || timedOut || shootersPreSpun) && !shootersReachedSpeed)) {
             shootersReachedSpeed = true;
         }
 
@@ -254,6 +374,12 @@ public class StartShootingSequence {
         middleBallDetected = false;
         middleBallBlockerLowered = false;
         middleBallPushServoFired = false;
+        centeringStarted = false;
+        centeringComplete = false;
+        centeringSettled = false;
+
+        // Stop robot movement
+        follower.setTeleOpDrive(0, 0, 0);
 
         // Stop sorter
         sorterServo.setPower(0);
@@ -269,6 +395,44 @@ public class StartShootingSequence {
 
     public void cancel() {
         // Emergency cancel for timeout - immediately stop everything
-        stop();
+        follower.setTeleOpDrive(0, 0, 0);
+
+        // Force complete the sequence without finishing
+        waiting = false;
+        centeringStarted = false;
+        centeringComplete = false;
+
+        // Stop all motors and servos
+        sorterServo.setPower(0);
+        sorterServo2.setPower(0);
+
+        // Reset all servos
+        leftServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+        middleServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+        rightServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+        leftPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+        rightPushServo.setPosition(BlueFourCyclesConstants.SERVO_MAX);
+    }
+
+    // Helper methods for limelight centering
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private double getHeading() {
+        try {
+            return imu.getAngularOrientation().firstAngle - imuOffset;
+        } catch (Exception e) {
+            return -imuOffset;
+        }
+    }
+
+    // Public getter for centering status (for telemetry)
+    public boolean isCentering() {
+        return centeringStarted && !centeringComplete;
+    }
+
+    public boolean isCentered() {
+        return centeringComplete;
     }
 }

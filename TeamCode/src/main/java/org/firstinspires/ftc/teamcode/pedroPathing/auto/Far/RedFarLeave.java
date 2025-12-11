@@ -121,14 +121,14 @@ public class RedFarLeave extends OpMode {
         shooterSubsystem = new UpdateShootersFar(rightShooter, middleShooter, leftShooter);
         sorterSubsystem = new UpdateSorter(sorterServo, sorterServo2, leftColor, rightColor);
 
-        shootingSequence = new FarShootingSequence(
+        /*shootingSequence = new FarShootingSequence(
                 shooterSubsystem,
                 leftServo, middleServo, rightServo,
                 leftPushServo, rightPushServo,
                 sorterServo, sorterServo2,
                 leftColor
         );
-
+*/
         stopRobotSubsystem = new StopRobot(
                 follower,
                 intake,

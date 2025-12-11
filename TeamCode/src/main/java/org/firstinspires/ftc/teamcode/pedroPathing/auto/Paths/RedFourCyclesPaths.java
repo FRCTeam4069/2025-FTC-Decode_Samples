@@ -12,78 +12,59 @@ public class RedFourCyclesPaths {
 
     public static class Paths {
 
-        // Poses (Mirrored)
-        public Pose moveToFirstShotStart = new Pose(21.0, 21.0);
-        public Pose moveToFirstShotEnd   = new Pose(48.093, 44.84);
+        // Poses
+        public Pose moveToFirstShotStart = new Pose(126.116, 123.000);
+        public Pose moveToFirstShotEnd   = new Pose(95.226, 99.174);
 
-        public Pose moveToPickupStart    = new Pose(48.093, 44.84);
-        public Pose moveToPickupControl1 = new Pose(58.316, 51.81);
-        public Pose moveToPickupControl2 = new Pose(58.083, 62.498);
-        public Pose moveToPickupEnd      = new Pose(53.901, 60.407);
+        public Pose moveToPickupStart    = new Pose(95.226, 99.160);
+        public Pose moveToPickupControl1 = new Pose(91.277, 92.439);
+        public Pose moveToPickupEnd      = new Pose(96, 84.310);
 
-        public Pose pickupStart = new Pose(53.901, 60.407);
-        public Pose pickupEnd   = new Pose(26.00, 60.407);
+        public Pose pickupStart          = new Pose(96, 84.310);
+        public Pose pickupEnd            = new Pose(120.774, 84.077);
 
-        public Pose moveToSecondShotStart = new Pose(29.739, 60.407);
-        public Pose moveToSecondShotControl1 = new Pose(34.85, 50.649);
-        public Pose moveToSecondShotEnd   = new Pose(48.325, 49.719);
+        public Pose moveToSecondShotStart = new Pose(120.774, 84.077);
+        public Pose moveToSecondShotControl1 = new Pose(115.200, 97.548);
+        public Pose moveToSecondShotEnd   = new Pose(95.226, 99.174);
 
-        public Pose moveToPickUpTwoStart   = new Pose(48.325, 49.719);
-        public Pose moveToPickUpTwoControl1 = new Pose(58.316, 55.76);
-        public Pose moveToPickUpTwoControl2 = new Pose(71.094, 84.569);
-        public Pose moveToPickUpTwoEnd     = new Pose(55.295, 88.0);
+        public Pose moveToPickUpTwoStart   = new Pose(95.226, 99.174);
+        public Pose moveToPickUpTwoControl1 = new Pose(85.006, 71.303);
+        public Pose moveToPickUpTwoEnd     = new Pose(96, 58);
 
-        public Pose pickUpTwoStart = new Pose(55.295, 88.0);
-        public Pose pickUpTwoEnd   = new Pose(22.00, 88.0);
+        public Pose pickUpTwoStart = new Pose(96, 58);
+        public Pose pickUpTwoEnd   = new Pose(122.865, 58);
 
-        public Pose moveToShootThreeStart = new Pose(32.759, 85.034);
-        public Pose moveToShootThreeControl1 = new Pose(45.77, 77.135);
-        public Pose moveToShootThreeEnd = new Pose(49.487, 46.234);
+        public Pose moveToShootThreeStart = new Pose(122.865, 58.529);
+        public Pose moveToShootThreeControl1 = new Pose(108.929, 61.548);
+        public Pose moveToShootThreeEnd = new Pose(95.226, 99.174);
 
-        public Pose moveToPickUpThreeStart = new Pose(49.487, 46.234);
-        public Pose moveToPickUpThreeControl1 = new Pose(69.003, 69.932);
-        public Pose moveToPickUpThreeControl2 = new Pose(65.518, 108.964);
-        public Pose moveToPickUpThreeEnd = new Pose(57.386, 109.429);
+        public Pose moveToPickUpThreeStart = new Pose(95.226, 99.406);
+        public Pose moveToPickUpThreeEnd = new Pose(98.942, 59.458);
 
-        public Pose pickUpThreeStart = new Pose(57.386, 109.429);
-        public Pose pickUpThreeEnd   = new Pose(29.042, 109.661);
+        // Headings (in degrees, configurable)
+        public double moveToFirstShotStartHeading = -143;
+        public double moveToFirstShotEndHeading   = -143;
 
-        public Pose moveToShootFourStart = new Pose(29.042, 109.661);
-        public Pose moveToShootFourControl1 = new Pose(10.223, 105.944);
-        public Pose moveToShootFourControl2 = new Pose(56.689, 73.417);
-        public Pose moveToShootFourEnd = new Pose(49.022, 46.699);
+        public double moveToPickupStartHeading = -143;
+        public double moveToPickupEndHeading   = 0;
 
-        // Headings (Mirrored: 180 - original)
-        public double moveToFirstShotStartHeading = 54;   // 180 - 216
-        public double moveToFirstShotEndHeading   = 54;   // 180 - 222
+        public double pickupStartHeading = 0;
+        public double pickupEndHeading   = 0;
 
-        public double moveToPickupStartHeading = -36;     // 180 - 216
-        public double moveToPickupEndHeading   = 180;     // 180 - 0
+        public double moveToSecondShotStartHeading = 0;
+        public double moveToSecondShotEndHeading   = -143;
 
-        public double pickupStartHeading = 180;           // 180 - 0
-        public double pickupEndHeading   = 180;           // 180 - 0
+        public double moveToPickUpTwoStartHeading = -143;
+        public double moveToPickUpTwoEndHeading   = 0;
 
-        public double moveToSecondShotStartHeading = 54; // 180 - 0
-        public double moveToSecondShotEndHeading   = 54; // 180 - 225
+        public double pickUpTwoStartHeading = 0;
+        public double pickUpTwoEndHeading   = 0;
 
-        public double moveToPickUpTwoStartHeading = 180;  // 180 - 0
-        public double moveToPickUpTwoEndHeading   = 180;  // 180 - 0
+        public double moveToShootThreeStartHeading = 0;
+        public double moveToShootThreeEndHeading   = -143;
 
-        public double pickUpTwoStartHeading = 180;        // 180 - 0
-        public double pickUpTwoEndHeading   = 180;        // 180 - 0
-
-        public double moveToShootThreeStartHeading = 180; // 180 - 0
-        public double moveToShootThreeEndHeading   = -45; // 180 - 225
-
-        public double moveToPickUpThreeStartHeading = -45; // 180 - 225
-        public double moveToPickUpThreeEndHeading   = 180; // 180 - 0
-
-        public double pickUpThreeStartHeading = 180;      // 180 - 0
-        public double pickUpThreeEndHeading   = 180;      // 180 - 0
-
-        public double moveToShootFourStartHeading = 180;  // 180 - 0
-        public double moveToShootFourEndHeading   = -45;  // 180 - 225
-
+        public double moveToPickUpThreeStartHeading = -143;
+        public double moveToPickUpThreeEndHeading   = 0;
 
         // Paths
         public PathChain MovetoFirstShot;
@@ -94,8 +75,6 @@ public class RedFourCyclesPaths {
         public PathChain PickUpTwo;
         public PathChain MovetoShootThree;
         public PathChain MovetoPickUpThree;
-        public PathChain PickUpThree;
-        public PathChain MovetoShootFour;
 
         public Paths(Follower follower) {
             buildPaths(follower);
@@ -110,7 +89,7 @@ public class RedFourCyclesPaths {
                     .build();
 
             MovetoPickup = follower.pathBuilder()
-                    .addPath(new BezierCurve(moveToPickupStart, moveToPickupControl1, moveToPickupControl2, moveToPickupEnd))
+                    .addPath(new BezierCurve(moveToPickupStart, moveToPickupControl1, moveToPickupEnd))
                     .setLinearHeadingInterpolation(Math.toRadians(moveToPickupStartHeading),
                             Math.toRadians(moveToPickupEndHeading))
                     .build();
@@ -128,7 +107,7 @@ public class RedFourCyclesPaths {
                     .build();
 
             MovetoPickUpTwo = follower.pathBuilder()
-                    .addPath(new BezierCurve(moveToPickUpTwoStart, moveToPickUpTwoControl1, moveToPickUpTwoControl2, moveToPickUpTwoEnd))
+                    .addPath(new BezierCurve(moveToPickUpTwoStart, moveToPickUpTwoControl1, moveToPickUpTwoEnd))
                     .setLinearHeadingInterpolation(Math.toRadians(moveToPickUpTwoStartHeading),
                             Math.toRadians(moveToPickUpTwoEndHeading))
                     .build();
@@ -146,21 +125,8 @@ public class RedFourCyclesPaths {
                     .build();
 
             MovetoPickUpThree = follower.pathBuilder()
-                    .addPath(new BezierCurve(moveToPickUpThreeStart, moveToPickUpThreeControl1, moveToPickUpThreeControl2, moveToPickUpThreeEnd))
-                    .setLinearHeadingInterpolation(Math.toRadians(moveToPickUpThreeStartHeading),
-                            Math.toRadians(moveToPickUpThreeEndHeading))
-                    .build();
-
-            PickUpThree = follower.pathBuilder()
-                    .addPath(new BezierLine(pickUpThreeStart, pickUpThreeEnd))
-                    .setLinearHeadingInterpolation(Math.toRadians(pickUpThreeStartHeading),
-                            Math.toRadians(pickUpThreeEndHeading))
-                    .build();
-
-            MovetoShootFour = follower.pathBuilder()
-                    .addPath(new BezierCurve(moveToShootFourStart, moveToShootFourControl1, moveToShootFourControl2, moveToShootFourEnd))
-                    .setLinearHeadingInterpolation(Math.toRadians(moveToShootFourStartHeading),
-                            Math.toRadians(moveToShootFourEndHeading))
+                    .addPath(new BezierLine(moveToPickUpThreeStart, moveToPickUpThreeEnd))
+                    .setTangentHeadingInterpolation()
                     .build();
         }
     }
