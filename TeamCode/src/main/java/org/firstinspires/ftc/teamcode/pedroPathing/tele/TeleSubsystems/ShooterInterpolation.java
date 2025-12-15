@@ -51,6 +51,14 @@ public class ShooterInterpolation {
     }
 
     /**
+     * NEW: Resets the servo lower time (used when Y button pauses then releases)
+     * This ensures the delay restarts from the moment Y is released
+     */
+    public void resetServoLowerTime(double currentTime) {
+        servoLowerTime = currentTime;
+    }
+
+    /**
      * Checks if enough time has passed for push servos
      */
     public boolean shouldLowerPushServos(double currentTime) {

@@ -164,6 +164,7 @@ public class CompetitionTeleOp extends LinearOpMode {
 
             // ---------- INTERPOLATION SHOOTING ----------
             boolean interpolating = gamepad2.right_trigger > RobotConstants.TRIGGER_THRESHOLD;
+            boolean yButtonHeld = gamepad2.y; // NEW: Check Y button state
 
             if (interpolating) {
                 if (!interpolation.isInterpolationShooting()) {
@@ -200,30 +201,44 @@ public class CompetitionTeleOp extends LinearOpMode {
                     sorterControls.setIntakePower(0.0);
                 }
 
+                // NEW: Only proceed with servo sequence if Y button is NOT held
                 if (!interpolation.areServosLowered()) {
-                    // Ramp up phase
+                    // Ramp up phase - keep servos up regardless of Y button
                     blockerServos.setAllUp();
                     pusherServos.setAllUp();
                     double targetRPM = interpolation.getInterpolatedTargetRPM();
 
                     // Check if enabled shooters are at target
                     if (shooter.areAllEnabledShootersAtTarget(
-                            targetRPM, targetRPM, targetRPM)) {
+                            targetRPM, targetRPM, targetRPM) && !yButtonHeld) {
+                        // NEW: Only lower servos if Y is not held
                         interpolation.setServosLowered(now);
                     }
                 } else {
-                    // Shooting phase
-                    blockerServos.setAllDown();
-                    if (interpolation.shouldLowerPushServos(now)) {
-                        pusherServos.setAllDown();
+                    // Shooting phase - only execute if Y button is NOT held
+                    if (!yButtonHeld) {
+                        // Normal firing sequence
+                        blockerServos.setAllDown();
+                        if (interpolation.shouldLowerPushServos(now)) {
+                            pusherServos.setAllDown();
 
-                        // Start intake delay when push servos fire
-                        if (!intakeDelayActive) {
-                            intakeDelayActive = true;
-                            intakeDelayStartTime = now;
+                            // Start intake delay when push servos fire
+                            if (!intakeDelayActive) {
+                                intakeDelayActive = true;
+                                intakeDelayStartTime = now;
+                            }
+                        } else {
+                            pusherServos.setAllUp();
                         }
                     } else {
+                        // NEW: Y button held - pause servo sequence but maintain shooter RPM
+                        // Keep all servos in up position
+                        blockerServos.setAllUp();
                         pusherServos.setAllUp();
+
+                        // Reset the servo lower time so when Y is released,
+                        // the delay restarts from that moment
+                        interpolation.resetServoLowerTime(now);
                     }
                 }
             } else {

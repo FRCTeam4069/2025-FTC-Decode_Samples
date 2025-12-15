@@ -20,7 +20,7 @@ import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.teamcode.pedroPathing.tele.TeleSubsystems.RobotConstants;
 
 @Configurable
-@TeleOp(name = "Bolton Competition TeleOp", group = "TeleOp")
+@TeleOp(name = "Testing teleop", group = "TeleOp")
 public class BoltonTeleOP extends LinearOpMode {
 
     // Subsystems

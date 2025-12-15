@@ -42,6 +42,11 @@ public class BlueFarLeave extends OpMode {
     private double pauseStartTime = 0.0;
     private double pauseDuration = 0.0;
 
+    // --- NEW: Path Timeout Logic ---
+    private static final double PATH_TIMEOUT_SECONDS = 5.0; // 5 Second Timeout per path
+    private double pathStartTime = 0.0;
+    // -------------------------------
+
     // Auto timeout
     private static final double AUTO_TIMEOUT = 28.0;
     private double autoStartTime = 0.0;
@@ -182,29 +187,21 @@ public class BlueFarLeave extends OpMode {
         if (dt <= 0) dt = 1e-6;
         lastLoopTime = now;
 
-        // Check for timeout (28 seconds since start)
+        // Check for GLOBAL Auto timeout (28 seconds since start)
         double elapsedTime = now - autoStartTime;
         if (elapsedTime >= 28.0 && !timeoutTriggered && pathState < 6) {
-            // Cancel any active shooting sequence or pause
             if (shootingSequence.isWaiting()) {
                 shootingSequence.cancel();
             }
             isPausing = false;
-
-            // Stop intake but DON'T stop shooters yet - let them coast down naturally
             intake.setPower(0);
-
-            // Immediately start final path (Leave)
             pathState = 6;
             pathStarted = false;
             timeoutTriggered = true;
-
-            // Force start the final path immediately
             follower.followPath(paths.Leave);
             pathStarted = true;
         }
 
-        // Always update shooter PID
         shooterSubsystem.updateShooters(dt, now);
 
         // Update shooting sequence if active
@@ -216,7 +213,6 @@ public class BlueFarLeave extends OpMode {
             }
         }
 
-        // Handle pause timing
         if (isPausing) {
             if (now - pauseStartTime >= pauseDuration) {
                 isPausing = false;
@@ -225,7 +221,6 @@ public class BlueFarLeave extends OpMode {
             }
         }
 
-        // Update sorter when not shooting or pausing
         if (!shootingSequence.isWaiting() && !isPausing) {
             sorterSubsystem.updateSorter();
         }
@@ -238,18 +233,9 @@ public class BlueFarLeave extends OpMode {
         double leftRPM = leftShooter.getVelocity() * 60.0 / BlueAutoFarConstants.TICKS_PER_REV;
 
         panelsTelemetry.debug("Auto Time", String.format("%.1f / %.1f", elapsedTime, AUTO_TIMEOUT));
-        panelsTelemetry.debug("Timeout Triggered", timeoutTriggered);
         panelsTelemetry.debug("Path State", pathState);
-        panelsTelemetry.debug("Pausing", isPausing);
-        panelsTelemetry.debug("Waiting (shooting)", shootingSequence.isWaiting());
         panelsTelemetry.debug("Centering", shootingSequence.isCentering());
-        panelsTelemetry.debug("Centered", shootingSequence.isCentered());
-        panelsTelemetry.debug("Shooter RPMs (R/M/L)", String.format("%.0f / %.0f / %.0f", rightRPM, middleRPM, leftRPM));
-        panelsTelemetry.debug("Left Color Green", leftColor.green());
-        panelsTelemetry.debug("Follower isBusy", follower.isBusy());
-        panelsTelemetry.debug("X", follower.getPose().getX());
-        panelsTelemetry.debug("Y", follower.getPose().getY());
-        panelsTelemetry.debug("Heading°", Math.toDegrees(follower.getPose().getHeading()));
+        panelsTelemetry.debug("Shooter RPMs", String.format("%.0f/%.0f/%.0f", rightRPM, middleRPM, leftRPM));
         panelsTelemetry.update(telemetry);
     }
 
@@ -263,10 +249,21 @@ public class BlueFarLeave extends OpMode {
         stopRobotSubsystem.stopAll();
     }
 
+    // Helper to check if path is done OR timed out
+    private boolean isPathFinishedOrTimedOut() {
+        double pathElapsed = getRuntime() - pathStartTime;
+        boolean isTimedOut = pathElapsed >= PATH_TIMEOUT_SECONDS;
+
+        if (isTimedOut && follower.isBusy()) {
+            follower.breakFollowing(); // Stop the robot from trying to finish the old path
+            panelsTelemetry.debug("Path Warning", "TIMEOUT TRIGGERED");
+        }
+
+        return !follower.isBusy() || isTimedOut;
+    }
+
     public void autonomousPathUpdate() {
-        // Don't process path updates if we've timed out and are executing the final path
         if (timeoutTriggered && pathState == 6) {
-            // Just let the final path complete
             if (!follower.isBusy()) {
                 shooterSubsystem.stopShooters();
                 intake.setPower(0);
@@ -290,15 +287,17 @@ public class BlueFarLeave extends OpMode {
                     follower.setMaxPower(0.65);
                     follower.followPath(paths.FarShot);
                     pathStarted = true;
-                } else if (!follower.isBusy()) {
-                    // No pause - go straight to centering and shooting
+                    pathStartTime = getRuntime(); // Start Timeout Timer
+                } else if (isPathFinishedOrTimedOut()) {
                     pathState++;
                     pathStarted = false;
                 }
                 break;
 
-            case 1: // START FIRST SHOT - WITH LIMELIGHT CENTERING (shoots all 3 balls one at a time)
+            case 1: // SHOOTING SEQUENCE (Centers automatically)
                 if (!pathStarted) {
+                    // Ensure we aren't moving before shooting starts
+                    follower.breakFollowing();
                     shootingSequence.start(getRuntime());
                     pathStarted = true;
                 }
@@ -309,19 +308,20 @@ public class BlueFarLeave extends OpMode {
                     follower.setMaxPower(1);
                     follower.followPath(paths.MoveToPickUp);
                     pathStarted = true;
-                } else if (!follower.isBusy()) {
-                    // 0.5 second pause before pickup
+                    pathStartTime = getRuntime(); // Start Timeout Timer
+                } else if (isPathFinishedOrTimedOut()) {
                     startPause(0.5);
                 }
                 break;
 
-            case 3: // PICKUP (after pause)
+            case 3: // PICKUP
                 if (!pathStarted) {
                     follower.setMaxPower(0.75);
                     follower.followPath(paths.PickUp);
                     intake.setPower(0.650);
                     pathStarted = true;
-                } else if (!follower.isBusy()) {
+                    pathStartTime = getRuntime(); // Start Timeout Timer
+                } else if (isPathFinishedOrTimedOut()) {
                     follower.setMaxPower(0.750);
                     pathState++;
                     pathStarted = false;
@@ -334,17 +334,17 @@ public class BlueFarLeave extends OpMode {
                     follower.followPath(paths.MovetoFarShotTwo);
                     intake.setPower(0.60);
                     pathStarted = true;
-                } else if (!follower.isBusy()) {
-                    // Stop intake before centering/shooting
+                    pathStartTime = getRuntime(); // Start Timeout Timer
+                } else if (isPathFinishedOrTimedOut()) {
                     intake.setPower(0.0);
-                    // No pause - go straight to centering and shooting
                     pathState++;
                     pathStarted = false;
                 }
                 break;
 
-            case 5: // START SECOND SHOT - WITH LIMELIGHT CENTERING (shoots all 3 balls one at a time)
+            case 5: // SHOOTING SEQUENCE 2
                 if (!pathStarted) {
+                    follower.breakFollowing();
                     shootingSequence.start(getRuntime());
                     pathStarted = true;
                 }
@@ -354,7 +354,8 @@ public class BlueFarLeave extends OpMode {
                 if (!pathStarted) {
                     follower.followPath(paths.Leave);
                     pathStarted = true;
-                } else if (!follower.isBusy()) {
+                    pathStartTime = getRuntime(); // Start Timeout Timer
+                } else if (isPathFinishedOrTimedOut()) {
                     shooterSubsystem.stopShooters();
                     intake.setPower(0);
                     pathState++;
@@ -365,72 +366,33 @@ public class BlueFarLeave extends OpMode {
     }
 
     public static class Paths {
-
-        public PathChain FarShot;
-        public PathChain MoveToPickUp;
-        public PathChain PickUp;
-        public PathChain MovetoFarShotTwo;
-        public PathChain Leave;
+        public PathChain FarShot, MoveToPickUp, PickUp, MovetoFarShotTwo, Leave;
 
         public Paths(Follower follower) {
-            FarShot = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(53.187, 9.058),
-                                    new Pose(58.083, 14.590),
-                                    new Pose(63.000, 12.000)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(90), Math.toRadians(-61))
+            FarShot = follower.pathBuilder()
+                    .addPath(new BezierCurve(new Pose(53.187, 9.058), new Pose(58.083, 14.590), new Pose(63.000, 12.000)))
+                    .setLinearHeadingInterpolation(Math.toRadians(90), Math.toRadians(-67))
                     .build();
 
-            MoveToPickUp = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(63.000, 12.000),
-                                    new Pose(69.700, 23.884),
-                                    new Pose(14.865, 19.045)
-                            )
-                    )
+            MoveToPickUp = follower.pathBuilder()
+                    .addPath(new BezierCurve(new Pose(63.000, 12.000), new Pose(69.700, 23.884), new Pose(14.865, 19.045)))
                     .setLinearHeadingInterpolation(Math.toRadians(-67), Math.toRadians(180))
                     .build();
 
-            PickUp = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(14.865, 19.045),
-                                    new Pose(8.129, 13.239),
-                                    new Pose(17.187, 13.006),
-                                    new Pose(17.884, 13),
-                                    new Pose(9.290, 13)
-                            )
-                    )
+            PickUp = follower.pathBuilder()
+                    .addPath(new BezierCurve(new Pose(14.865, 19.045), new Pose(8.129, 13.239), new Pose(17.187, 13.006), new Pose(17.884, 13), new Pose(9.290, 13)))
                     .setLinearHeadingInterpolation(Math.toRadians(180), Math.toRadians(180))
                     .build();
 
-            MovetoFarShotTwo = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(9.290, 4.645),
-                                    new Pose(28.335, 21.135),
-                                    new Pose(63.000, 12.000)
-                            )
-                    )
+            MovetoFarShotTwo = follower.pathBuilder()
+                    .addPath(new BezierCurve(new Pose(9.290, 4.645), new Pose(28.335, 21.135), new Pose(63.000, 12.000)))
                     .setLinearHeadingInterpolation(Math.toRadians(180), Math.toRadians(-67))
                     .build();
 
-            Leave = follower
-                    .pathBuilder()
-                    .addPath(
-                            new BezierLine(new Pose(63.000, 12.000), new Pose(57.000, 35.000))
-                    )
+            Leave = follower.pathBuilder()
+                    .addPath(new BezierLine(new Pose(63.000, 12.000), new Pose(57.000, 35.000)))
                     .setLinearHeadingInterpolation(Math.toRadians(-67), Math.toRadians(180))
                     .build();
         }
     }
-
 }

@@ -21,12 +21,12 @@ public class FarShootingSequence {
     private Limelight3A limelight;
     private double imuOffset = 0.0;
 
-    // SAFE FLAGS — these are ALWAYS valid, even before start() is called
+    // Flags
     private boolean waiting = false;
     private boolean centering = false;
     private boolean centered = false;
 
-    // Internal state (your original variables)
+    // Internal state
     private boolean sideBallsBlockersLowered = false;
     private boolean sideBallsPushServosFired = false;
     private boolean sideBallsShot = false;
@@ -57,13 +57,14 @@ public class FarShootingSequence {
     // Centering constants
     private static final double CENTERING_KP = 0.0075;
     private static final double CENTERING_KD = 0.0005;
-    private static final double CENTERING_ANGLE_TOLERANCE = 2.0;
+    private static final double CENTERING_ANGLE_TOLERANCE = 1.0; // Tightened tolerance slightly
     private static final double CENTERING_MAX_POWER = 0.4;
     private static final double CENTERING_TIMEOUT = 2.0;
     private static final double CENTERING_SETTLE_TIME = 0.15;
-    public static double CENTERING_OFFSET_DEGREES = 40; // tweak as needed
 
-    // Public safe getters
+    // ADJUST THIS: If robot shoots left of tag, increase this. If right, decrease.
+    public static double CENTERING_OFFSET_DEGREES = 0;
+
     public boolean isWaiting()  { return waiting; }
     public boolean isCentering() { return centering; }
     public boolean isCentered()  { return centered; }
@@ -94,24 +95,14 @@ public class FarShootingSequence {
         } catch (Exception e) {
             imuOffset = 0.0;
         }
-
-        // These are safe even before start() is ever called
-        waiting = false;
-        centering = false;
-        centered = false;
     }
 
     public void start(double currentTime) {
         startInternal(currentTime, false);
     }
 
-    public void startWithPreSpunShooters(double currentTime) {
-        startInternal(currentTime, true);
-    }
-
     private void startInternal(double currentTime, boolean preSpun) {
         waitStartTime = currentTime;
-
         waiting = true;
         centering = false;
         centered = false;
@@ -136,7 +127,6 @@ public class FarShootingSequence {
             shooterSubsystem.startSideShoostersOnly(currentTime);
         }
 
-        // Servos up
         leftServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
         middleServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
         rightServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
@@ -145,6 +135,9 @@ public class FarShootingSequence {
 
         sorterServo.setPower(0);
         sorterServo2.setPower(0);
+
+        // IMPORTANT: Ensure PedroPathing stops trying to hold position so we can turn freely
+        follower.breakFollowing();
     }
 
     public boolean update(double currentTime) {
@@ -163,34 +156,31 @@ public class FarShootingSequence {
         if (centeringStarted && !centeringComplete) {
             double centeringElapsed = currentTime - centeringStartTime;
 
-            double imuYawDegrees = getHeading();
-            try { limelight.updateRobotOrientation(imuYawDegrees); } catch (Exception ignored) {}
+            // Sync Limelight orientation (Optional but good practice)
+            try { limelight.updateRobotOrientation(getHeading()); } catch (Exception ignored) {}
 
             LLResult result = limelight.getLatestResult();
 
-            // Timeout
             if (centeringElapsed >= CENTERING_TIMEOUT) {
+                // Timeout
                 follower.setTeleOpDrive(0, 0, 0);
                 centeringComplete = true;
                 centering = false;
-                centered = false;
-                // continue to shooting
             }
-            // No target
             else if (result == null || !result.isValid()) {
+                // No target found, wait a bit then give up
                 if (centeringElapsed >= 0.5) {
                     follower.setTeleOpDrive(0, 0, 0);
                     centeringComplete = true;
                     centering = false;
-                    centered = false;
                 }
             }
-            // Target visible → PD control
             else {
+                // Target found - Turn
                 double tx = result.getTx();
-                double errorAngle = tx - CENTERING_OFFSET_DEGREES;
+                double errorAngle = tx - CENTERING_OFFSET_DEGREES; // -tx for some mounting orientations
 
-                double dt = 0.02;
+                double dt = 0.02; // Approx loop time
                 double deriv = (errorAngle - lastCenteringError) / dt;
                 lastCenteringError = errorAngle;
 
@@ -208,14 +198,16 @@ public class FarShootingSequence {
                         centering = false;
                         centered = true;
                     } else {
+                        // Slow down as we settle
                         follower.setTeleOpDrive(0, 0, correction * 0.5);
                     }
                 } else {
                     centeringSettled = false;
+                    // Drive x=0, y=0, turn=correction
                     follower.setTeleOpDrive(0, 0, correction);
                 }
             }
-            return false; // still centering
+            return false; // Stay in this method, do not proceed to next auto state
         }
 
         // PHASE 1 – Wait for shooters
@@ -225,8 +217,8 @@ public class FarShootingSequence {
 
         // PHASE 2 – Lower side blockers
         if (shootersReachedSpeed && !sideBallsBlockersLowered) {
-            middleServo.setPosition(BlueAutoFarConstants.SERVO_MIN); // left blocker
-            rightServo.setPosition(BlueAutoFarConstants.SERVO_MIN);  // right blocker
+            middleServo.setPosition(BlueAutoFarConstants.SERVO_MIN);
+            rightServo.setPosition(BlueAutoFarConstants.SERVO_MIN);
             sideBallsBlockerDownTime = currentTime;
             sideBallsBlockersLowered = true;
         }
@@ -304,49 +296,18 @@ public class FarShootingSequence {
         waiting = false;
         centering = false;
         centered = false;
-
         follower.setTeleOpDrive(0, 0, 0);
         sorterServo.setPower(0);
         sorterServo2.setPower(0);
-
         leftServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
         middleServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
         rightServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
         leftPushServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
         rightPushServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
-
-        // Reset internal flags so next shot works perfectly
-        sideBallsBlockersLowered = false;
-        sideBallsPushServosFired = false;
-        sideBallsShot = false;
-        shootersReachedSpeed = false;
-        shootersPreSpun = false;
-        leftPushServoRaised = false;
-        transferringMiddleBall = false;
-        middleBallDetected = false;
-        middleBallBlockerLowered = false;
-        middleBallPushServoFired = false;
-        centeringStarted = false;
-        centeringComplete = false;
-        centeringSettled = false;
     }
 
     public void cancel() {
-        waiting = false;
-        centering = false;
-        centered = false;
-        centeringStarted = false;
-        centeringComplete = false;
-
-        follower.setTeleOpDrive(0, 0, 0);
-        sorterServo.setPower(0);
-        sorterServo2.setPower(0);
-
-        leftServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
-        middleServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
-        rightServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
-        leftPushServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
-        rightPushServo.setPosition(BlueAutoFarConstants.SERVO_MAX);
+        stop();
     }
 
     private double clamp(double val, double min, double max) {
